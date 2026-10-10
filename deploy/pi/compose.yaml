@@ -1,13 +1,18 @@
-# Runs on the Raspberry Pi: daemon (camera, Presage, telemetry, audio) + analytics (Tiger Data, Gemini) + web UI + Caddy (HTTPS, local CA).
+# Runs on the Raspberry Pi: daemon (camera, Presage, telemetry, audio) + analytics (Tiger Data, Gemini) + web UI.
+# HTTPS (needed for the browser mic): Tailscale HTTPS (docs/pi-setup.md), or the optional Caddy local CA profile.
 # Images are built on a laptop and shipped by build_and_ship.sh; the Pi builds nothing.
 #
 #   cd ~/cradleecho && docker compose up -d
-#   Open https://<pi-host>.local/ from any device on the same network (after pairing at http://<pi-host>.local/pair).
-#   Plain HTTP on :3000, :8000, :8001 still works for debugging and existing docs.
+#   Plain HTTP on :3000, :8000, :8001 works on the LAN / tailnet. For the mic, publish it over HTTPS with
+#   `tailscale serve` (443 -> :3000, 8443 -> :8000, 10000 -> :8001), or `--profile lan-https` for Caddy.
 name: cradleecho
 
 services:
   caddy:
+    # Optional LAN-only HTTPS with a local CA. Off by default; start with
+    #   docker compose --profile lan-https up -d
+    # Tailscale HTTPS (docs/pi-setup.md) needs no CA and is the recommended way to get a mic.
+    profiles: ["lan-https"]
     image: caddy:2
     ports:
       - "80:80"
