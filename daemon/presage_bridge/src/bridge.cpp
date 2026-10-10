@@ -6,7 +6,11 @@
 //   bridge               cv::VideoCapture on $PRESAGE_VIDEO_DEVICE (default /dev/video11)
 //
 // Output: {"t": <epoch s>, "brpm": .., "bpm": .., "confidence": ..} per metrics update.
+// With PRESAGE_FACE_METRICS=1 the bridge also requests Presage's face metrics and adds
+// "blink" (a blink was detected in this update), "lm" (face landmark count) and "ear" (eye
+// aspect ratio from the eyelid landmarks; measured 0.18-0.27 open, 0.06-0.12 closed; -1 if unavailable).
 #include <algorithm>
+#include <cmath>
 #include <atomic>
 #include <chrono>
 #include <csignal>
@@ -48,7 +52,24 @@ struct VitalsState {
     double brpm = 0.0, br_conf = 0.0;
     double bpm = 0.0, hr_conf = 0.0;
     bool has_br = false, has_hr = false;
+    bool blink = false;  // a blink was detected since the last line we printed
+    int landmarks = 0;
+    double ear = -1.0;
 };
+
+// Eye aspect ratio from MediaPipe face-mesh landmarks (468/478 points): mean over both eyes of
+// (two vertical eyelid gaps) / (2 * eye width). Scale-free, so distance to the camera doesn't matter.
+double eye_aspect_ratio(const google::protobuf::RepeatedPtrField<Point2dFloat>& p) {
+    if (p.size() < 468) return -1.0;
+    auto d = [&p](int a, int b) { return std::hypot(p[a].x() - p[b].x(), p[a].y() - p[b].y()); };
+    auto ear = [&d](int c1, int t1, int t2, int c2, int b2, int b1) {
+        double w = d(c1, c2);
+        return w > 0 ? (d(t1, b1) + d(t2, b2)) / (2.0 * w) : -1.0;
+    };
+    double right = ear(33, 160, 158, 133, 153, 144);
+    double left = ear(362, 385, 387, 263, 373, 380);
+    return (right < 0 || left < 0) ? -1.0 : (right + left) / 2.0;
+}
 
 bool parse_dims(const std::string& s, int& w, int& h) {
     return std::sscanf(s.c_str(), "%dx%d", &w, &h) == 2 && w > 0 && h > 0;
@@ -115,6 +136,9 @@ int main(int argc, char** argv) {
     config.api_key = api_key;
     config.requested_metrics = SmartSpectraConfig::BreathingMetrics();
     config.AddMetrics(SmartSpectraConfig::CardioMetrics());
+    const char* face_env = std::getenv("PRESAGE_FACE_METRICS");
+    const bool want_face = face_env && std::string(face_env) == "1";
+    if (want_face) config.AddMetrics(SmartSpectraConfig::FaceMetrics());
 
     SmartSpectra sdk(config);
     VitalsState state;
@@ -140,7 +164,7 @@ int main(int argc, char** argv) {
         }
     });
 
-    sdk.SetOnMetrics([&state](const Metrics& m, int64_t) {
+    sdk.SetOnMetrics([&state, want_face](const Metrics& m, int64_t) {
         std::lock_guard<std::mutex> lock(state.mu);
 
         if (m.has_breathing() && m.breathing().rate_size() > 0) {
@@ -155,6 +179,15 @@ int main(int argc, char** argv) {
             state.hr_conf = s.confidence();
             state.has_hr = true;
         }
+        if (want_face && m.has_face()) {
+            const auto& f = m.face();
+            for (const auto& b : f.blinking()) state.blink = state.blink || b.detected();
+            if (f.landmarks_size() > 0) {
+                const auto& lm = f.landmarks(f.landmarks_size() - 1).value();
+                state.landmarks = lm.size();
+                state.ear = eye_aspect_ratio(lm);
+            }
+        }
         if (!state.has_br && !state.has_hr) return;
 
         // Be conservative: overall confidence is the weakest signal we have.
@@ -167,8 +200,16 @@ int main(int argc, char** argv) {
                        .count();
         {
             std::lock_guard<std::mutex> out_lock(g_out_mu);
-            std::printf("{\"t\": %.3f, \"brpm\": %.2f, \"bpm\": %.2f, \"confidence\": %.3f}\n",
-                        t, state.brpm, state.bpm, conf);
+            if (want_face) {
+                std::printf("{\"t\": %.3f, \"brpm\": %.2f, \"bpm\": %.2f, \"confidence\": %.3f, "
+                            "\"blink\": %s, \"lm\": %d, \"ear\": %.3f}\n",
+                            t, state.brpm, state.bpm, conf, state.blink ? "true" : "false",
+                            state.landmarks, state.ear);
+                state.blink = false;
+            } else {
+                std::printf("{\"t\": %.3f, \"brpm\": %.2f, \"bpm\": %.2f, \"confidence\": %.3f}\n",
+                            t, state.brpm, state.bpm, conf);
+            }
             std::fflush(stdout);
         }
     });

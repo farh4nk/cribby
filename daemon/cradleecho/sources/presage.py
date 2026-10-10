@@ -15,6 +15,7 @@ import numpy as np
 
 from cradleecho import diag
 from cradleecho.config import settings
+from cradleecho.eyes import EyeTracker
 from cradleecho.sources.base import Reading
 
 logger = logging.getLogger(__name__)
@@ -119,6 +120,11 @@ class PresageVitalsSource:
         return self._proc is not None
 
     @property
+    def eyes(self) -> tuple[str, float | None]:
+        """(OPEN | CLOSED | UNKNOWN, smoothed eye aspect ratio or None)."""
+        return self._eyes.state(), self._eyes.openness()
+
+    @property
     def gate(self):
         return self._gate
 
@@ -177,6 +183,7 @@ class PresageVitalsSource:
         self._gate_active = True
         self._gate_event: asyncio.Event | None = None
         self._paused = False
+        self._eyes = EyeTracker()
 
     async def start(self) -> None:
         if self._running:
@@ -256,6 +263,7 @@ class PresageVitalsSource:
         self._latest_reading = None
         self._last_received_time = None
         self._validation = None
+        self._eyes.reset()
         if self._proc is not None:
             logger.info("face gate: stopping Presage session")
             try:
@@ -385,6 +393,16 @@ class PresageVitalsSource:
                         motion_val = data.get("motion_index")
                         motion = float(motion_val) if motion_val is not None else None
                         timestamp = float(data.get("t", time.time()))
+
+                        if "ear" in data or "blink" in data:
+                            ear_val = data.get("ear")
+                            ear = float(ear_val) if ear_val is not None and float(ear_val) >= 0 else None
+                            self._eyes.update(ear, bool(data.get("blink", False)))
+                            diag.value(
+                                "eyes",
+                                f"{self._eyes.state()} ear={ear if ear is not None else -1:.3f} "
+                                f"lm={data.get('lm', 0)} blink={bool(data.get('blink'))}",
+                            )
 
                         diag.count("bridge_rows")
                         diag.value("last_row", f"brpm={brpm:.1f} bpm={bpm:.1f} conf={conf:.2f}")

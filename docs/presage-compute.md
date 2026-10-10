@@ -24,6 +24,7 @@ and the rest of the daemon need the remainder, so the Presage SDK sits right at 
      -e CRADLEECHO_SOURCE=presage \
      -e CRADLEECHO_PRESAGE_CMD="/opt/bridge/bridge --stdin 480x360" \
      -e CRADLEECHO_PRESAGE_FPS=1000 -e CRADLEECHO_PRESAGE_PACE_FPS=30 \
+     -e PRESAGE_FACE_METRICS=1 \
      -e CRADLEECHO_GATE_CHEST_ROOM=1.0 --restart unless-stopped \
      cradleecho-daemon:latest
    ```

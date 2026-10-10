@@ -2,19 +2,21 @@
 
 import { useEffect, useState } from "react";
 import { useTelemetry } from "@/context/TelemetryProvider";
-import type { CameraStatus, NightVisionMode } from "@/lib/types";
+import type { CameraStatus, NightVisionMode, Telemetry } from "@/lib/types";
 import { useDaemonUrl } from "@/lib/useDaemonUrl";
 import { hasSeparateEdge, nightVisionUrl } from "@/lib/config";
 import { StateBadge } from "./StateBadge";
 
 const RETRY_MS = 3000;
 
-function statusParts(camera: CameraStatus): string[] {
+function statusParts(camera: CameraStatus, eyes?: Telemetry["eyes"]): string[] {
   const parts = [camera.live ? "Camera live" : "Placeholder feed (no camera)"];
   parts.push(
     camera.gate === "OPEN" ? "Reading vitals" : camera.gate === "CLOSED" ? "Waiting for a face" : "Face gate off",
   );
   if (camera.framing === "OK") parts.push("Framing good");
+  if (eyes?.state === "OPEN") parts.push("Eyes open");
+  else if (eyes?.state === "CLOSED") parts.push("Eyes closed");
   return parts;
 }
 
@@ -310,7 +312,7 @@ export function CameraWindow() {
                 ? "Camera off · Synthetic vitals active"
                 : "Presage paused · no credits in use"
               : camera
-                ? statusParts(camera).map((part, i) => (
+                ? statusParts(camera, stale ? undefined : latest?.eyes).map((part, i) => (
                     <span key={part} className="flex items-center">
                       {i > 0 && <span aria-hidden className="mx-2.5 text-ink-faint/60">·</span>}
                       {part}
