@@ -65,6 +65,30 @@ The defaults in `compose.yaml` come from real measurements; override any of them
 
 **A Pi 4 is at its limit for Presage.** Measured with `CRADLEECHO_DIAG=1`: the bridge's mediapipe threads use ~2.5 of 4 cores and only 20-25 fps reach it (below the 25 it needs), even at 320x240, with the `performance` CPU governor and no browser open. The camera itself delivers a steady 30 fps and the face gate costs ~6 ms/frame. With Presage on a Mac reading the Pi's stream, 29 fps reached the bridge with no `kFrameRateTooLow`. See [presage-compute.md](presage-compute.md) for the table and the Pi-as-camera setup (`CRADLEECHO_SOURCE=mock CRADLEECHO_STREAM_FPS=30`).
 
+## HTTPS for the microphone: Tailscale (recommended)
+Browsers only allow the mic (two-way audio "talk") on HTTPS or `localhost`. `tailscale serve` gives the Pi a real
+Let's Encrypt certificate for its `*.ts.net` name, so devices need no CA install and no `/pair` step. Only devices
+on your tailnet can reach it.
+
+1. In the Tailscale admin console: **DNS** → enable **MagicDNS** and **HTTPS Certificates**.
+2. On the Pi (compose stack up; Tailscale Serve only allows HTTPS ports 443, 8443 and 10000):
+   ```bash
+   sudo tailscale serve --bg --https=443   http://127.0.0.1:3000   # web UI
+   sudo tailscale serve --bg --https=8443  http://127.0.0.1:8000   # daemon (video, WebSockets, API)
+   sudo tailscale serve --bg --https=10000 http://127.0.0.1:8001   # analytics
+   tailscale serve status
+   ```
+3. Open `https://<pi>.<tailnet>.ts.net/`. The web app detects a `*.ts.net` host and talks to `:8443` and `:10000`
+   on the same name (`web/lib/config.ts`).
+4. Stop Caddy if it is running (`docker compose stop caddy`). The default `docker compose up -d` no longer starts
+   it; the Caddy local-CA setup is still available with `docker compose --profile lan-https up -d`.
+5. Rebuild and ship the web image (`build_and_ship.sh`): an older web build calls `/daemon` on the same origin,
+   which `tailscale serve` does not provide, and the page shows "Camera offline".
+
+Notes: Google sign-in needs `https://<pi>.<tailnet>.ts.net/api/auth/callback/google` as an authorized redirect URI.
+The `*.ts.net` machine name appears in public certificate transparency logs. Reset with `sudo tailscale serve reset`.
+Not yet tested on the Pi.
+
 ## Verified vs not yet verified
 
 Verified (on an arm64 machine, no Pi hardware):

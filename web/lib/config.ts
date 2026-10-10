@@ -4,6 +4,12 @@ export const APP_NAME = "Cribby";
 const DAEMON_PORT = 8000;
 const ANALYTICS_PORT = 8001;
 
+// `tailscale serve` can publish HTTPS on 443, 8443 and 10000 only: web on 443, daemon on 8443,
+// analytics on 10000 (docs/pi-setup.md). Pages opened on a *.ts.net name use those ports.
+const TS_DAEMON_PORT = 8443;
+const TS_ANALYTICS_PORT = 10000;
+const onTailscaleHost = () => window.location.hostname.endsWith(".ts.net");
+
 /**
  * Base URL of the daemon (video, telemetry, API). Browser-only values: call this from effects and
  * event handlers, or use `useDaemonUrl()` when rendering.
@@ -12,7 +18,8 @@ const ANALYTICS_PORT = 8001;
  * makes the UI work from any device when the Pi serves both the UI and the daemon (a hard-coded
  * localhost would point a laptop at itself).
  *
- * When served over HTTPS via Caddy (same origin), the daemon is reachable at /daemon and analytics
+ * On a *.ts.net name (`tailscale serve`) the daemon is on :8443 and analytics on :10000. When served
+ * over HTTPS via Caddy (same origin), the daemon is reachable at /daemon and analytics
  * at /analytics — no port needed. Plain-HTTP behavior stays exactly as is (host:8000 / host:8001).
  */
 export function daemonUrl(): string {
@@ -20,6 +27,7 @@ export function daemonUrl(): string {
   if (fromEnv) return fromEnv.replace(/\/$/, "");
   if (typeof window !== "undefined") {
     const isHttps = window.location.protocol === "https:";
+    if (isHttps && onTailscaleHost()) return `https://${window.location.hostname}:${TS_DAEMON_PORT}`;
     if (isHttps) {
       // Same-origin through Caddy: /daemon proxies to daemon:8000
       return `${window.location.origin}/daemon`;
@@ -35,6 +43,7 @@ export function analyticsUrl(): string {
   if (fromEnv) return fromEnv.replace(/\/$/, "");
   if (typeof window !== "undefined") {
     const isHttps = window.location.protocol === "https:";
+    if (isHttps && onTailscaleHost()) return `https://${window.location.hostname}:${TS_ANALYTICS_PORT}`;
     if (isHttps) {
       // Same-origin through Caddy: /analytics proxies to analytics:8001
       return `${window.location.origin}/analytics`;

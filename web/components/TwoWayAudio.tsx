@@ -335,9 +335,10 @@ export function TwoWayAudio({ sootheEngine }: { sootheEngine: SootheEngine | nul
           {!secureContext ? (
             <div className="rounded-xl bg-amber-500/10 px-4 py-3 text-sm text-amber-300 ring-1 ring-amber-500/30">
               <div>Microphone needs HTTPS or localhost</div>
-              <a href={`http://${typeof window !== "undefined" ? window.location.hostname : "localhost"}/pair`} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-xs underline hover:text-amber-100">
-                Pair this device to enable the microphone
-              </a>
+              <p className="mt-1 text-xs text-amber-300/80">
+                Open this page at the monitor’s Tailscale HTTPS address (https://&lt;pi&gt;.&lt;tailnet&gt;.ts.net) to talk.
+                Listening works without it.
+              </p>
             </div>
           ) : (
             <button
