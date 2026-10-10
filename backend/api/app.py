@@ -446,7 +446,7 @@ def get_user_baby(user_id: str):
 
 @app.put("/api/babies/{baby_id}")
 def update_baby_profile(baby_id: str, update: BabyProfileUpdate):
-    """Updates child's name, bedtime schedule, or ElevenLabs voice ID."""
+    """Updates child's name, bedtime schedule, or stored voice ID (unused since voice cloning was dropped)."""
     with get_db_connection() as conn:
         cur = conn.cursor()
         try:

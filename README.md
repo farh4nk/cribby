@@ -1,6 +1,6 @@
 # Cribby
 
-> Real-time infant wellness monitor with non-contact vitals, ElevenLabs cloned-voice auto-soothing, Tiger Data storage, and Gemini morning summaries.
+> Real-time infant wellness monitor with non-contact vitals, relaxing-music auto-soothing, Tiger Data storage, and Gemini morning summaries.
 
 ---
 
@@ -14,7 +14,6 @@ cp web/.env.example web/.env.local
 Fill in `.env` with:
 - `DATABASE_URL`: Tiger Data / Timescale connection string
 - `GEMINI_API_KEY`: Google AI Studio key
-- `ELEVENLABS_API_KEY`: ElevenLabs key (also in `web/.env.local`)
 
 ### 2. Database (Tiger Data)
 ```bash
@@ -42,8 +41,6 @@ python -m backend.scripts.seed_demo_data
 - `GET /api/sleep-timeline`: Chronological sleep state segments.
 - `GET /api/vitals-trend`: Downsampled BrPM & BPM sparkline data.
 - `POST /api/soothe-events`: Log auto-soothe intervention trigger/resolution.
-- `POST /api/elevenlabs/clone`: Instant voice clone from 10s audio sample.
-- `POST /api/elevenlabs/tts`: Text-to-speech in cloned parent voice.
 
 ---
 

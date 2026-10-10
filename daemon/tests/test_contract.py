@@ -21,7 +21,7 @@ def test_contract_format_telemetry_payload():
         motion_index=0.1
     )
     
-    assert set(payload.keys()) == {"timestamp", "state", "vitals", "motion_index", "camera", "simulated"}
+    assert set(payload.keys()) == {"timestamp", "state", "vitals", "motion_index", "camera", "simulated", "eyes"}
     assert set(payload["vitals"].keys()) == {"brpm", "bpm", "confidence"}
     assert set(payload["camera"].keys()) == {"enabled", "live", "gate", "framing", "sdk_code", "sdk_hint", "night_vision", "enhancing"}
     
@@ -45,7 +45,7 @@ def test_contract_api_state_mock():
         assert response.status_code == 200
         payload = response.json()
         
-        assert set(payload.keys()) == {"timestamp", "state", "vitals", "motion_index", "camera", "simulated"}
+        assert set(payload.keys()) == {"timestamp", "state", "vitals", "motion_index", "camera", "simulated", "eyes"}
         assert set(payload["vitals"].keys()) == {"brpm", "bpm", "confidence"}
         assert set(payload["camera"].keys()) == {"enabled", "live", "gate", "framing", "sdk_code", "sdk_hint", "night_vision", "enhancing"}
         assert re.match(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$", payload["timestamp"])
@@ -82,7 +82,7 @@ def test_contract_api_state_stale_presage():
         assert response.status_code == 200
         payload = response.json()
         
-        assert set(payload.keys()) == {"timestamp", "state", "vitals", "motion_index", "camera", "simulated"}
+        assert set(payload.keys()) == {"timestamp", "state", "vitals", "motion_index", "camera", "simulated", "eyes"}
         assert set(payload["vitals"].keys()) == {"brpm", "bpm", "confidence"}
         assert set(payload["camera"].keys()) == {"enabled", "live", "gate", "framing", "sdk_code", "sdk_hint", "night_vision", "enhancing"}
         assert re.match(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$", payload["timestamp"])

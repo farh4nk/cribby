@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     # Requested from the camera. Presage needs >= 25 fps; without an explicit request many UVC
     # cameras (e.g. Logitech Brio 101) fall back to a 15 fps default mode.
     camera_fps: float = Field(default=30.0, gt=0, validation_alias="CRADLEECHO_CAMERA_FPS")
+    # No frames for this long (stream ended, Pi restarted, camera unplugged): close and reopen the
+    # camera. Also the wait between attempts while it can't be opened.
+    camera_reconnect_s: float = Field(default=3.0, gt=0, validation_alias="CRADLEECHO_CAMERA_RECONNECT_S")
     # Rate of the MJPEG preview while someone is watching. Presage gets every camera frame
     # regardless; encoding JPEGs at the full 30 fps would take CPU the Presage bridge needs.
     stream_fps: float = Field(default=20.0, gt=0, validation_alias="CRADLEECHO_STREAM_FPS")
@@ -39,6 +42,13 @@ class Settings(BaseSettings):
         validation_alias="CRADLEECHO_PRESAGE_CMD"
     )
     presage_fps: float = Field(default=30.0, gt=0, validation_alias="CRADLEECHO_PRESAGE_FPS")
+    # Eyes open/closed (needs PRESAGE_FACE_METRICS=1 for the bridge): eye aspect ratio below this,
+    # held for a moment, reads as CLOSED. Measured on the Brio at ~1 m: open 0.18-0.27, closed
+    # 0.06-0.12. Calibrate per camera; see cradleecho/eyes.py.
+    # Use eyes in the sleep state: open -> AWAKE; closed -> breathing may sit outside the infant
+    # range (so an adult can demo sleep). Unknown eyes -> breathing/motion rules only.
+    eyes_in_classifier: bool = Field(default=True, validation_alias="CRADLEECHO_EYES_IN_CLASSIFIER")
+    eyes_closed_ear: float = Field(default=0.15, gt=0, validation_alias="CRADLEECHO_EYES_CLOSED_EAR")
     # Feed the bridge at a steady rate (0 = off, write frames as they arrive). The bridge
     # timestamps frames on arrival, so a network stream that delivers frames in bursts (measured:
     # a third of gaps under 17 ms, some over 150 ms) reads as a low frame rate to Presage.

@@ -10,9 +10,12 @@ import {
   type ReactNode,
 } from "react";
 import {
+  DEMO_VITALS_ALERT,
   HISTORY_LENGTH,
   MOCK,
+  SIMULATE_RESTLESS_MS,
   STALE_AFTER_MS,
+  VITALS_ALERT,
   cameraUrl,
   daemonUrl,
   simulateRestlessUrl,
@@ -21,7 +24,8 @@ import {
 import { startMockTelemetry, type MockTelemetrySource } from "@/lib/mockTelemetry";
 import { toneOf } from "@/lib/stateCopy";
 import { isTelemetry, type Telemetry } from "@/lib/types";
-import { useActivity, type ActivityEvent } from "@/lib/useActivity";
+import { useActivity, type ActiveAlert, type ActivityEvent } from "@/lib/useActivity";
+import { VitalsAlertMonitor } from "@/lib/vitalsAlert";
 
 export interface TelemetryContextValue {
   /** Most recent packet, or null before the first one arrives. */
@@ -43,6 +47,9 @@ export interface TelemetryContextValue {
   stateSince: number | null;
   /** Desktop notifications for state changes (need https or localhost). */
   alerts: { supported: boolean; enabled: boolean; set: (on: boolean) => Promise<void> };
+  /** High-vitals alert shown as an on-screen popup until dismissed, or null. */
+  activeAlert: ActiveAlert | null;
+  dismissAlert: () => void;
   /** Forces RESTLESS for 15s (daemon endpoint, or the mock generator). */
   simulateRestless: () => Promise<void>;
   /** Turn the camera on/off. Off stops capture and the Presage session (no credits used). */
@@ -60,12 +67,15 @@ export function TelemetryProvider({ children }: { children: ReactNode }) {
   const [connected, setConnected] = useState(MOCK);
   const [stale, setStale] = useState(true);
   const [sourceMode, setSourceModeState] = useState<"SIMULATED" | "REALTIME">("SIMULATED");
-  const { events, stateSince, record, alerts } = useActivity();
+  const { events, stateSince, record, recordAlert, activeAlert, dismissAlert, alerts } = useActivity();
   const lastMessageAt = useRef(0);
   const mockSource = useRef<MockTelemetrySource | null>(null);
+  const vitalsMonitor = useRef(new VitalsAlertMonitor(VITALS_ALERT));
 
   const handleMessage = useCallback((t: Telemetry) => {
     lastMessageAt.current = Date.now();
+    const vitalsAlert = vitalsMonitor.current.observe(t);
+    if (vitalsAlert) recordAlert(vitalsAlert);
     setStale(false);
     setLatest(t);
     if (t.mode) {
@@ -73,7 +83,7 @@ export function TelemetryProvider({ children }: { children: ReactNode }) {
     }
     setHistory((prev) => [...prev.slice(-(HISTORY_LENGTH - 1)), t]);
     record(toneOf(t, false, t.mode ?? sourceMode), t.camera);
-  }, [record, sourceMode]);
+  }, [record, recordAlert, sourceMode]);
 
   // Query initial mode from daemon
   useEffect(() => {
@@ -164,6 +174,9 @@ export function TelemetryProvider({ children }: { children: ReactNode }) {
   }, [record]);
 
   const simulateRestless = useCallback(async () => {
+    // Demo preset (low limit, 5s sustain, simulated data allowed) for the length of the episode,
+    // plus a little slack so the alert can land before the readings settle.
+    vitalsMonitor.current.applyTemporarily(DEMO_VITALS_ALERT, SIMULATE_RESTLESS_MS + 5000);
     if (MOCK) {
       mockSource.current?.simulateRestless();
       return;
@@ -176,21 +189,26 @@ export function TelemetryProvider({ children }: { children: ReactNode }) {
     }
 
     // Graceful fallback: simulate restless episode locally if daemon endpoint fails
-    const nowIso = new Date().toISOString();
-    handleMessage({
-      timestamp: nowIso,
-      state: "RESTLESS",
-      vitals: { brpm: 34.5, bpm: 122.0, confidence: 0.92 },
-      motion_index: 0.76,
-    });
+    // Streams readings like the daemon does (2 Hz) so time-based logic, like the alert's
+    // sustain timer, behaves the same as it would live.
+    const sendRestless = () =>
+      handleMessage({
+        timestamp: new Date().toISOString(),
+        state: "RESTLESS",
+        vitals: { brpm: 34.5, bpm: 122.0, confidence: 0.92 },
+        motion_index: 0.76,
+      });
+    sendRestless();
+    const stream = setInterval(sendRestless, 500);
     setTimeout(() => {
+      clearInterval(stream);
       handleMessage({
         timestamp: new Date().toISOString(),
         state: "ASLEEP",
         vitals: { brpm: 24.0, bpm: 108.0, confidence: 0.95 },
         motion_index: 0.06,
       });
-    }, 15000);
+    }, SIMULATE_RESTLESS_MS);
   }, [handleMessage]);
 
   const setCameraEnabled = useCallback(async (enabled: boolean) => {
@@ -219,6 +237,8 @@ export function TelemetryProvider({ children }: { children: ReactNode }) {
         events,
         stateSince,
         alerts,
+        activeAlert,
+        dismissAlert,
         simulateRestless,
         setCameraEnabled,
       }}

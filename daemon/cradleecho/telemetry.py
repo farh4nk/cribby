@@ -58,6 +58,14 @@ def format_telemetry_payload(
     night_vision_mode = getattr(camera, "get_night_vision_mode", lambda: "OFF")() if camera else "OFF"
     enhancing = getattr(camera, "is_enhancing", lambda: False)() if camera else False
 
+    eyes_state, eyes_openness = getattr(source, "eyes", ("UNKNOWN", None)) if source else ("UNKNOWN", None)
+    if not session_running:
+        eyes_state, eyes_openness = "UNKNOWN", None
+    eyes_info = {
+        "state": eyes_state,
+        "openness": round(float(eyes_openness), 3) if eyes_openness is not None else None,
+    }
+
     camera_info = {
         "enabled": getattr(camera, "is_enabled", lambda: True)() if camera else True,
         "live": is_live,
@@ -81,6 +89,7 @@ def format_telemetry_payload(
         "camera": camera_info,
         # True while the Simulated source drives the readings: consumers must not record them.
         "simulated": isinstance(source, MockVitalsSource),
+        "eyes": eyes_info,
     }
 
 
@@ -197,12 +206,17 @@ class TelemetryHub:
 
         reading_confidence = 0.0 if (forced or gate) else reading.confidence
 
+        eyes = None
+        if settings.eyes_in_classifier and getattr(self.source, "session_running", False):
+            eyes = getattr(self.source, "eyes", (None, None))[0]
+
         reading_with_motion = Reading(
             brpm=reading.brpm,
             bpm=reading.bpm,
             confidence=reading_confidence,
             motion_index=motion,
             timestamp=reading.timestamp,
+            eyes=eyes,
         )
 
         state = self.classifier.update(reading_with_motion)

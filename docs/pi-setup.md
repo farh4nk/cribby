@@ -17,7 +17,7 @@ Logitech webcam ──USB──▶ Pi 4: [daemon :8000] ──speaker──▶ C
 - Raspberry Pi 4, **64-bit** Raspberry Pi OS (Lite is fine), 4 GB RAM recommended (2 GB is tight).
 - Docker + the compose plugin: `curl -fsSL https://get.docker.com | sh`, then `sudo usermod -aG docker $USER` and log back in.
 - `sudo apt install v4l-utils` (lets `pi_check.sh` find the camera).
-- SSH access from your laptop (`ssh-copy-id pi@<pi-host>`), a `PRESAGE_API_KEY` in `daemon/.env`, database keys in `.env`, and an `ELEVENLABS_API_KEY` in `web/.env.local`.
+- SSH access from your laptop (`ssh-copy-id pi@<pi-host>`), a `PRESAGE_API_KEY` in `daemon/.env`, and database keys in `.env`.
 
 ## Deploy (laptop → Pi)
 
@@ -28,7 +28,7 @@ The Pi builds nothing. Compiling the Presage bridge or `next build` on a Pi 4 is
 deploy/pi/build_and_ship.sh pi@raspberrypi.local --with-env
 ```
 
-This builds all images for `linux/arm64` (including `caddy:2`), loads them on the Pi, and copies `compose.yaml`, `Caddyfile`, `pair/`, `pi_check.sh` and (with `--with-env`) your Presage key (`daemon.env`), analytics keys (`analytics.env`), and ElevenLabs key (`web.env`). The daemon image is ~2.2 GB, so the first transfer takes a few minutes.
+This builds all images for `linux/arm64` (including `caddy:2`), loads them on the Pi, and copies `compose.yaml`, `Caddyfile`, `pair/`, `pi_check.sh` and (with `--with-env`) your Presage key (`daemon.env`), and analytics keys (`analytics.env`). The daemon image is ~2.2 GB, so the first transfer takes a few minutes.
 On an Apple Silicon Mac the arm64 build is native. On an x86 machine run once:
 `docker run --privileged --rm tonistiigi/binfmt --install arm64`.
 
@@ -64,6 +64,30 @@ The defaults in `compose.yaml` come from real measurements; override any of them
 - Never set `CAP_PROP_BUFFERSIZE=1` on a V4L2 camera: with one buffer the driver can't capture while a frame is read, which halved the rate from 30 to 15 fps here. A regression test covers it.
 
 **A Pi 4 is at its limit for Presage.** Measured with `CRADLEECHO_DIAG=1`: the bridge's mediapipe threads use ~2.5 of 4 cores and only 20-25 fps reach it (below the 25 it needs), even at 320x240, with the `performance` CPU governor and no browser open. The camera itself delivers a steady 30 fps and the face gate costs ~6 ms/frame. With Presage on a Mac reading the Pi's stream, 29 fps reached the bridge with no `kFrameRateTooLow`. See [presage-compute.md](presage-compute.md) for the table and the Pi-as-camera setup (`CRADLEECHO_SOURCE=mock CRADLEECHO_STREAM_FPS=30`).
+
+## HTTPS for the microphone: Tailscale (recommended)
+Browsers only allow the mic (two-way audio "talk") on HTTPS or `localhost`. `tailscale serve` gives the Pi a real
+Let's Encrypt certificate for its `*.ts.net` name, so devices need no CA install and no `/pair` step. Only devices
+on your tailnet can reach it.
+
+1. In the Tailscale admin console: **DNS** → enable **MagicDNS** and **HTTPS Certificates**.
+2. On the Pi (compose stack up; Tailscale Serve only allows HTTPS ports 443, 8443 and 10000):
+   ```bash
+   sudo tailscale serve --bg --https=443   http://127.0.0.1:3000   # web UI
+   sudo tailscale serve --bg --https=8443  http://127.0.0.1:8000   # daemon (video, WebSockets, API)
+   sudo tailscale serve --bg --https=10000 http://127.0.0.1:8001   # analytics
+   tailscale serve status
+   ```
+3. Open `https://<pi>.<tailnet>.ts.net/`. The web app detects a `*.ts.net` host and talks to `:8443` and `:10000`
+   on the same name (`web/lib/config.ts`).
+4. Stop Caddy if it is running (`docker compose stop caddy`). The default `docker compose up -d` no longer starts
+   it; the Caddy local-CA setup is still available with `docker compose --profile lan-https up -d`.
+5. Rebuild and ship the web image (`build_and_ship.sh`): an older web build calls `/daemon` on the same origin,
+   which `tailscale serve` does not provide, and the page shows "Camera offline".
+
+Notes: Google sign-in needs `https://<pi>.<tailnet>.ts.net/api/auth/callback/google` as an authorized redirect URI.
+The `*.ts.net` machine name appears in public certificate transparency logs. Reset with `sudo tailscale serve reset`.
+Not yet tested on the Pi.
 
 ## Verified vs not yet verified
 

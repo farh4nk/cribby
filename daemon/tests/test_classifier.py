@@ -223,3 +223,41 @@ def test_force_restless_and_settle_back_to_asleep():
     # After the forced window the baby has to settle again before reading asleep.
     assert feed(clf, clock, reading(26, 0.03), 4) == STATE_DROWSY
     assert feed(clf, clock, reading(26, 0.03), 8) == STATE_ASLEEP
+
+
+def test_eyes_open_reads_awake_even_with_sleepy_breathing_and_no_motion():
+    from cradleecho.classifier import ClassifierConfig, SleepStateClassifier
+    from cradleecho.sources.base import Reading
+
+    clf = SleepStateClassifier(config=ClassifierConfig())
+    r = Reading(brpm=26.0, bpm=110.0, confidence=1.0, motion_index=0.02, eyes="OPEN")
+    assert clf.evaluate_candidate(r, None) == "AWAKE"
+
+
+def test_eyes_closed_lets_adult_breathing_settle():
+    from cradleecho.classifier import ClassifierConfig, SleepStateClassifier
+    from cradleecho.sources.base import Reading
+
+    clf = SleepStateClassifier(config=ClassifierConfig())
+    calm = Reading(brpm=16.0, bpm=70.0, confidence=1.0, motion_index=0.02, eyes="CLOSED")
+    stir = Reading(brpm=16.0, bpm=70.0, confidence=1.0, motion_index=0.3, eyes="CLOSED")
+    assert clf.evaluate_candidate(calm, None) == "ASLEEP"  # hold time applies in update()
+    assert clf.evaluate_candidate(stir, None) == "RESTLESS"
+
+
+def test_unknown_eyes_keep_the_breathing_rules():
+    from cradleecho.classifier import ClassifierConfig, SleepStateClassifier
+    from cradleecho.sources.base import Reading
+
+    clf = SleepStateClassifier(config=ClassifierConfig())
+    for eyes in (None, "UNKNOWN"):
+        assert clf.evaluate_candidate(Reading(16.0, 70.0, 1.0, 0.02, eyes=eyes), None) == "AWAKE"
+        assert clf.evaluate_candidate(Reading(26.0, 110.0, 1.0, 0.02, eyes=eyes), None) == "ASLEEP"
+
+
+def test_low_signal_wins_over_eyes():
+    from cradleecho.classifier import ClassifierConfig, SleepStateClassifier
+    from cradleecho.sources.base import Reading
+
+    clf = SleepStateClassifier(config=ClassifierConfig())
+    assert clf.evaluate_candidate(Reading(16.0, 70.0, 0.1, 0.02, eyes="OPEN"), None) == "SIGNAL_UNSTABLE"

@@ -43,6 +43,7 @@ export interface Telemetry {
   vitals: Vitals;
   motion_index: number;
   camera?: CameraStatus; // additive; older daemons omit it
+  eyes?: { state: "OPEN" | "CLOSED" | "UNKNOWN"; openness: number | null }; // additive
   simulated?: boolean; // additive: true while the Simulated source drives the readings (never recorded)
 }
 

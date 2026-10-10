@@ -1,25 +1,24 @@
-import { createHeartbeatWavUrl } from "./ambient";
-import { SoothingSnippet } from "./elevenlabs";
-import { edgeSoothePlayUrl, edgeSootheStopUrl } from "@/lib/config";
+import { createLullabyWavUrl } from "./music";
 
 const FADE_TICK_MS = 100;
+// Optional real track (e.g. "/soothe-music.mp3" in web/public, or any URL). Unset = the built-in
+// lullaby; if the track fails to load, the engine falls back to the lullaby.
+const MUSIC_URL = process.env.NEXT_PUBLIC_SOOTHE_MUSIC_URL;
 
 export type SootheStatus = "idle" | "pending" | "soothing" | "fading";
 
 export interface SootheEvent {
   type: "started" | "settled" | "stopped";
   at: number;
-  snippet?: string | null;
 }
 
 export interface SootheEngineOptions {
   triggerDelayMs?: number; // default 4000
   fadeMs?: number; // default 8000
   cooldownMs?: number; // default 10 * 60 * 1000
-  voiceVolume?: number; // default 0.7
-  ambientVolume?: number; // default 0.35
-  voiceRepeatMs?: number; // default 20000
-  ambientUrl?: string;
+  musicVolume?: number; // default 0.6
+  previewMs?: number; // default 6000
+  previewFadeMs?: number; // default 2500
   onEvent?: (event: SootheEvent) => void;
 }
 
@@ -27,30 +26,27 @@ export interface SootheSnapshot {
   enabled: boolean;
   status: SootheStatus;
   cooldownUntil: number;
-  snippet: string | null;
+  previewing: boolean;
 }
 
 /**
  * Auto-soothe orchestrator (Tasks 3.3 + 3.4).
- * Monitors telemetry state; plays heartbeat + cloned voice snippet, ramps down smoothly on ASLEEP.
+ * RESTLESS held for `triggerDelayMs` -> relaxing music; ASLEEP -> fade out over `fadeMs`.
+ * A cooldown stops it repeating if the baby is truly awake; stop() mutes it at once.
  */
 export class SootheEngine {
   opts: Required<SootheEngineOptions>;
-  ambientUrl: string;
-  ambient: HTMLAudioElement | null = null;
-  voice: HTMLAudioElement | null = null;
-  snippets: SoothingSnippet[] = [];
-  nextSnippet = 0;
+  music: HTMLAudioElement | null = null;
 
   enabled = true;
   status: SootheStatus = "idle";
   cooldownUntil = 0;
-  snippet: string | null = null;
+  previewing = false;
   level = 1;
 
   pendingTimer: ReturnType<typeof setTimeout> | null = null;
   fadeTimer: ReturnType<typeof setInterval> | null = null;
-  repeatTimer: ReturnType<typeof setInterval> | null = null;
+  previewTimer: ReturnType<typeof setTimeout> | null = null;
   lastState: string | null = null;
   listeners = new Set<() => void>();
   cached: SootheSnapshot;
@@ -60,15 +56,12 @@ export class SootheEngine {
       triggerDelayMs: 4000,
       fadeMs: 8000,
       cooldownMs: 10 * 60 * 1000,
-      voiceVolume: 0.7,
-      ambientVolume: 0.35,
-      voiceRepeatMs: 20000,
-      ambientUrl: options.ambientUrl ?? "",
+      musicVolume: 0.6,
+      previewMs: 6000,
+      previewFadeMs: 2500,
       onEvent: () => {},
       ...options,
     };
-
-    this.ambientUrl = this.opts.ambientUrl || (typeof window !== "undefined" ? createHeartbeatWavUrl() : "");
     this.cached = this.build();
   }
 
@@ -79,31 +72,26 @@ export class SootheEngine {
 
   getSnapshot = (): SootheSnapshot => this.cached;
 
-  setSnippets(snippets: SoothingSnippet[]) {
-    this.snippets = snippets;
-    this.nextSnippet = 0;
-  }
-
   setOnEvent(fn?: (event: SootheEvent) => void) {
     this.opts.onEvent = fn ?? (() => {});
   }
 
+  /** Call from a click: browsers only allow audio that a user gesture has unlocked. */
   async unlock() {
     if (typeof window === "undefined") return;
-    this.ensureElements();
-    for (const el of [this.ambient, this.voice]) {
-      if (!el) continue;
-      const prev = el.volume;
-      el.volume = 0;
-      try {
-        await el.play();
-      } catch {
-        /* unlock on next user click */
-      }
-      el.pause();
-      el.currentTime = 0;
-      el.volume = prev;
+    this.ensureElement();
+    const el = this.music;
+    if (!el || !el.paused) return;
+    const prev = el.volume;
+    el.volume = 0;
+    try {
+      await el.play();
+    } catch {
+      /* unlock on next user click */
     }
+    el.pause();
+    el.currentTime = 0;
+    el.volume = prev;
   }
 
   setEnabled(enabled: boolean) {
@@ -112,14 +100,11 @@ export class SootheEngine {
     else this.emit();
   }
 
-  /** Duck (pause) the soothe audio while the parent is talking. */
+  /** Duck (pause) the music while the parent is talking. */
   setDucked(ducked: boolean) {
-    if (ducked) {
-      this.ambient?.pause();
-      this.voice?.pause();
-    } else if (this.status === "soothing" || this.status === "fading") {
-      this.ambient?.play().catch(() => {});
-      this.voice?.play().catch(() => {});
+    if (ducked) this.music?.pause();
+    else if (this.status === "soothing" || this.status === "fading" || this.previewing) {
+      this.music?.play().catch(() => {});
     }
   }
 
@@ -143,11 +128,6 @@ export class SootheEngine {
     this.halt();
     if (lockout) this.cooldownUntil = Date.now() + this.opts.cooldownMs;
     if (wasActive) this.opts.onEvent({ type: "stopped", at: Date.now() });
-    try {
-      if (typeof window !== "undefined") {
-        fetch(edgeSootheStopUrl(), { method: "POST" }).catch(() => {});
-      }
-    } catch {}
     this.setStatus("idle");
   }
 
@@ -156,11 +136,42 @@ export class SootheEngine {
     this.emit();
   }
 
-  async playOnce(url: string) {
-    if (typeof window === "undefined") return;
-    const el = new Audio(url);
-    el.volume = this.opts.voiceVolume;
-    await el.play();
+  /** Plays a few seconds of the music (from a click, so it also unlocks audio for later). */
+  preview() {
+    if (typeof window === "undefined" || this.status !== "idle" || this.previewing) return;
+    this.ensureElement();
+    if (!this.music) return;
+    this.clearFade(); // a test fading out from a moment ago
+    this.level = 1;
+    this.applyVolume();
+    this.music.currentTime = 0;
+    this.music.play().catch(() => {});
+    this.previewing = true;
+    this.emit();
+    this.previewTimer = setTimeout(() => this.endPreview(this.opts.previewFadeMs), this.opts.previewMs);
+  }
+
+  /** Ends the test sound, fading out over `fadeMs` (0 = at once) so it never cuts off mid-note. */
+  endPreview(fadeMs = 1000) {
+    if (this.previewTimer) clearTimeout(this.previewTimer);
+    this.previewTimer = null;
+    if (!this.previewing) return;
+    this.previewing = false;
+    this.emit();
+    if (this.status !== "idle") return; // real soothing took over the music
+    if (fadeMs <= 0) {
+      this.halt();
+      return;
+    }
+    this.clearFade();
+    const startLevel = this.level;
+    const startedAt = Date.now();
+    this.fadeTimer = setInterval(() => {
+      const t = Math.min(1, (Date.now() - startedAt) / fadeMs);
+      this.level = startLevel * (1 - t) * (1 - t); // ease out: quieter sooner, no audible step
+      this.applyVolume();
+      if (t >= 1) this.halt();
+    }, FADE_TICK_MS);
   }
 
   destroy() {
@@ -173,7 +184,7 @@ export class SootheEngine {
     if (this.status === "fading") {
       this.clearFade();
       this.level = 1;
-      this.applyVolumes();
+      this.applyVolume();
       this.setStatus("soothing");
       return;
     }
@@ -191,42 +202,21 @@ export class SootheEngine {
   }
 
   private start() {
-    this.ensureElements();
+    this.endPreview(0);
+    this.clearFade(); // a test sound still fading out must not silence the real music
+    this.ensureElement();
     this.level = 1;
     this.cooldownUntil = Date.now() + this.opts.cooldownMs;
-    this.applyVolumes();
-
-    this.ambient?.play().catch(() => {});
-    this.playNextSnippet();
-    if (this.opts.voiceRepeatMs > 0) {
-      this.repeatTimer = setInterval(() => this.playNextSnippet(), this.opts.voiceRepeatMs);
+    this.applyVolume();
+    if (this.music) {
+      this.music.currentTime = 0;
+      this.music.play().catch(() => {});
     }
-
-    this.opts.onEvent({ type: "started", at: Date.now(), snippet: this.snippet });
+    this.opts.onEvent({ type: "started", at: Date.now() });
     this.setStatus("soothing");
   }
 
-  private playNextSnippet() {
-    if (!this.voice || this.snippets.length === 0) return;
-    const s = this.snippets[this.nextSnippet % this.snippets.length];
-    this.nextSnippet++;
-    this.snippet = s.text;
-    this.voice.src = s.url;
-    this.voice.play().catch(() => {});
-    try {
-      if (typeof window !== "undefined") {
-        fetch(edgeSoothePlayUrl(), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ phrase: s.text }),
-        }).catch(() => {});
-      }
-    } catch {}
-    this.emit();
-  }
-
   private beginFade() {
-    this.clearRepeat();
     this.clearFade();
     this.setStatus("fading");
     const startLevel = this.level;
@@ -234,7 +224,7 @@ export class SootheEngine {
     this.fadeTimer = setInterval(() => {
       const t = Math.min(1, (Date.now() - startedAt) / this.opts.fadeMs);
       this.level = startLevel * (1 - t);
-      this.applyVolumes();
+      this.applyVolume();
       if (t >= 1) {
         this.halt();
         this.opts.onEvent({ type: "settled", at: Date.now() });
@@ -243,32 +233,35 @@ export class SootheEngine {
     }, FADE_TICK_MS);
   }
 
-  private applyVolumes() {
-    const clamp = (v: number) => Math.max(0, Math.min(1, v));
-    if (this.ambient) this.ambient.volume = clamp(this.opts.ambientVolume * this.level);
-    if (this.voice) this.voice.volume = clamp(this.opts.voiceVolume * this.level);
+  private applyVolume() {
+    if (this.music) this.music.volume = Math.max(0, Math.min(1, this.opts.musicVolume * this.level));
   }
 
   private halt() {
     this.clearFade();
-    this.clearRepeat();
-    for (const el of [this.ambient, this.voice]) {
-      if (!el) continue;
-      el.pause();
-      el.currentTime = 0;
+    if (this.music) {
+      this.music.pause();
+      this.music.currentTime = 0;
     }
     this.level = 1;
   }
 
-  private ensureElements() {
-    if (typeof window === "undefined" || typeof Audio === "undefined") return;
-    if (!this.ambient) {
-      if (!this.ambientUrl) this.ambientUrl = createHeartbeatWavUrl();
-      this.ambient = new Audio(this.ambientUrl);
-      this.ambient.loop = true;
-    }
-    if (!this.voice) this.voice = new Audio();
-    this.applyVolumes();
+  private ensureElement() {
+    if (typeof window === "undefined" || typeof Audio === "undefined" || this.music) return;
+    const el = new Audio(MUSIC_URL || createLullabyWavUrl());
+    el.loop = true;
+    // Custom track failed to load: switch to the built-in lullaby, and resume if it was playing.
+    el.addEventListener(
+      "error",
+      () => {
+        const shouldPlay = this.status === "soothing" || this.status === "fading" || this.previewing;
+        el.src = createLullabyWavUrl();
+        if (shouldPlay) el.play().catch(() => {});
+      },
+      { once: true },
+    );
+    this.music = el;
+    this.applyVolume();
   }
 
   private cancelPending() {
@@ -282,11 +275,6 @@ export class SootheEngine {
     this.fadeTimer = null;
   }
 
-  private clearRepeat() {
-    if (this.repeatTimer) clearInterval(this.repeatTimer);
-    this.repeatTimer = null;
-  }
-
   private setStatus(s: SootheStatus) {
     this.status = s;
     this.emit();
@@ -297,7 +285,7 @@ export class SootheEngine {
       enabled: this.enabled,
       status: this.status,
       cooldownUntil: this.cooldownUntil,
-      snippet: this.snippet,
+      previewing: this.previewing,
     };
   }
 

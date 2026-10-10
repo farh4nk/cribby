@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTelemetry } from "@/context/TelemetryProvider";
 import { TONE_HEX } from "@/lib/stateCopy";
 
@@ -10,6 +10,40 @@ const time = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "numeri
 export function ActivityLog() {
   const { events, alerts } = useTelemetry();
   const [isOpen, setIsOpen] = useState(false);
+  // Set when the browser refuses permission, so the button doesn't just look dead.
+  const [blocked, setBlocked] = useState(false);
+
+  async function toggleAlerts() {
+    await alerts.set(!alerts.enabled);
+    setBlocked(!alerts.enabled && Notification.permission !== "granted");
+  }
+
+  // Browsers won't re-show the permission prompt once a site is blocked, so the user flips it in
+  // the address-bar menu. Watch for that and switch alerts on automatically when they do.
+  const { set: setAlerts } = alerts;
+  useEffect(() => {
+    if (!blocked || !navigator.permissions?.query) return;
+    let status: PermissionStatus | undefined;
+    let cancelled = false;
+    const onChange = () => {
+      if (status?.state === "granted") {
+        setBlocked(false);
+        void setAlerts(true);
+      }
+    };
+    navigator.permissions
+      .query({ name: "notifications" })
+      .then((s) => {
+        if (cancelled) return;
+        status = s;
+        s.addEventListener("change", onChange);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+      status?.removeEventListener("change", onChange);
+    };
+  }, [blocked, setAlerts]);
 
   return (
     <section className="flex flex-col rounded-2xl bg-white/5 ring-1 ring-white/10 overflow-hidden transition-all">
@@ -50,7 +84,7 @@ export function ActivityLog() {
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                alerts.set(!alerts.enabled);
+                void toggleAlerts();
               }}
               aria-pressed={alerts.enabled}
               className="rounded-full px-2.5 py-1 text-xs text-ink-dim ring-1 ring-white/12 transition hover:text-ink aria-pressed:text-tone aria-pressed:ring-tone/40"
@@ -68,6 +102,14 @@ export function ActivityLog() {
           </svg>
         </div>
       </div>
+
+      {blocked && !alerts.enabled && (
+        <p role="alert" className="border-t border-white/5 px-4 py-3 text-xs leading-relaxed text-ink-dim">
+          Your browser has notifications blocked for this site, and websites can&apos;t change that
+          themselves. Click the lock icon next to the address bar and set Notifications to Allow.
+          Alerts will switch on automatically once you do.
+        </p>
+      )}
 
       {isOpen && (
         <div className="border-t border-white/5 p-4 sm:p-5 pt-3">

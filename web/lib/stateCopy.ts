@@ -53,11 +53,11 @@ export function copyFor(tone: Tone, camera?: CameraStatus, name = ""): StateCopy
     case "asleep":
       return { headline: `${subject(name)} is sleeping soundly.`, detail: "Breathing and movement look calm.", pill: "Asleep" };
     case "drowsy":
-      return { headline: `${subject(name)} is drifting off.`, detail: "Settling: breathing is in a sleeping range and movement is calm.", pill: "Drowsy" };
+      return { headline: `${subject(name)} is drifting off.`, detail: "Settling: eyes closed or breathing in a sleeping range, and movement is calm.", pill: "Drowsy" };
     case "restless":
       return { headline: `${subject(name)} is stirring.`, detail: "More movement than usual. Auto-soothe is ready if it continues.", pill: "Restless" };
     case "awake":
-      return { headline: `${subject(name)} is awake.`, detail: "Active, or breathing faster than in sleep.", pill: "Awake" };
+      return { headline: `${subject(name)} is awake.`, detail: "Eyes open, moving, or breathing outside a sleeping range.", pill: "Awake" };
     case "unstable":
       return { headline: `Can’t see ${object(name)} clearly.`, detail: unstableHint(camera), pill: "Signal unclear" };
     case "paused":
