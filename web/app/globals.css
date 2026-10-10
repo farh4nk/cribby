@@ -44,8 +44,8 @@
 }
 
 @theme inline {
-  --font-display: var(--font-milkyway), var(--font-instrument), system-ui, sans-serif;
-  --font-sans: var(--font-instrument), system-ui, sans-serif;
+  --font-display: var(--font-gontserrat), system-ui, sans-serif;
+  --font-sans: var(--font-gontserrat), system-ui, sans-serif;
   --color-ink: var(--ink);
   --color-ink-dim: var(--ink-dim);
   --color-ink-faint: var(--ink-faint);
@@ -56,7 +56,8 @@
 body {
   background: var(--bg-0);
   color: var(--ink);
-  font-family: var(--font-instrument), system-ui, sans-serif;
+  font-family: var(--font-gontserrat), system-ui, sans-serif;
+  font-weight: 300; /* Gontserrat Light by default; heavier weights where classes ask for them */
   -webkit-font-smoothing: antialiased;
 }
 
