@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { playAlertChime, primeAlertSound, stopAlertChime } from "./alertSound";
 import { getBabyName } from "./babyName";
 import { APP_NAME } from "./config";
 import { eventText, shouldNotify, type Tone } from "./stateCopy";
@@ -10,6 +11,13 @@ export interface ActivityEvent {
   id: number;
   at: number; // ms since epoch
   tone: Tone;
+  text: string;
+}
+
+/** A high-vitals alert waiting to be dismissed (drives the on-screen popup). */
+export interface ActiveAlert {
+  id: number;
+  at: number;
   text: string;
 }
 
@@ -55,6 +63,15 @@ async function setAlerts(on: boolean) {
     /* storage unavailable */
   }
   alertListeners.forEach((l) => l());
+  if (on) {
+    primeAlertSound(); // this click is the user gesture that lets alerts make sound later
+    // Confirms it works right away (and shows the OS-level "allow" state if something blocks it).
+    try {
+      new Notification(APP_NAME, { body: "Desktop alerts are on.", tag: "cradleecho-test" });
+    } catch {
+      /* notifications blocked at runtime */
+    }
+  }
 }
 
 /**
@@ -65,6 +82,7 @@ async function setAlerts(on: boolean) {
 export function useActivity() {
   const [events, setEvents] = useState<ActivityEvent[]>([]);
   const [stateSince, setStateSince] = useState<number | null>(null);
+  const [activeAlert, setActiveAlert] = useState<ActiveAlert | null>(null);
   const toneRef = useRef<Tone | null>(null);
   const idRef = useRef(0);
 
@@ -91,5 +109,49 @@ export function useActivity() {
     }
   }, []);
 
-  return { events, stateSince, record, alerts: { supported, enabled, set: setAlerts } };
+  /**
+   * Logs an alert in the activity feed and raises a desktop notification if alerts are on.
+   * Unlike state changes, this fires even when the tab is visible (it can sit behind other
+   * windows) and stays on screen until dismissed.
+   */
+  const recordAlert = useCallback((text: string) => {
+    const now = Date.now();
+    const id = ++idRef.current;
+    setEvents((list) => [{ id, at: now, tone: "awake" as Tone, text }, ...list].slice(0, MAX_EVENTS));
+    // Popup, chime and desktop notification all follow the "Desktop alerts" switch. When it is
+    // off the alert is only written to the activity log.
+    if (getAlerts()) {
+      setActiveAlert({ id, at: now, text });
+      playAlertChime();
+      try {
+        new Notification(`${APP_NAME}: vitals above your range`, {
+          body: text,
+          tag: "cradleecho-vitals",
+          requireInteraction: true,
+        });
+      } catch {
+        /* notifications blocked at runtime */
+      }
+    }
+  }, []);
+
+  // Switching alerts off also hides any popup that is still showing and silences the chime.
+  useEffect(() => {
+    if (!enabled) stopAlertChime();
+  }, [enabled]);
+
+  const dismissAlert = useCallback(() => {
+    stopAlertChime();
+    setActiveAlert(null);
+  }, []);
+
+  return {
+    events,
+    stateSince,
+    record,
+    recordAlert,
+    activeAlert: enabled ? activeAlert : null,
+    dismissAlert,
+    alerts: { supported, enabled, set: setAlerts },
+  };
 }

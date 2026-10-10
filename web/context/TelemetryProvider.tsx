@@ -13,6 +13,7 @@ import {
   HISTORY_LENGTH,
   MOCK,
   STALE_AFTER_MS,
+  VITALS_ALERT,
   cameraUrl,
   daemonUrl,
   simulateRestlessUrl,
@@ -21,7 +22,8 @@ import {
 import { startMockTelemetry, type MockTelemetrySource } from "@/lib/mockTelemetry";
 import { toneOf } from "@/lib/stateCopy";
 import { isTelemetry, type Telemetry } from "@/lib/types";
-import { useActivity, type ActivityEvent } from "@/lib/useActivity";
+import { useActivity, type ActiveAlert, type ActivityEvent } from "@/lib/useActivity";
+import { VitalsAlertMonitor } from "@/lib/vitalsAlert";
 
 export interface TelemetryContextValue {
   /** Most recent packet, or null before the first one arrives. */
@@ -43,6 +45,9 @@ export interface TelemetryContextValue {
   stateSince: number | null;
   /** Desktop notifications for state changes (need https or localhost). */
   alerts: { supported: boolean; enabled: boolean; set: (on: boolean) => Promise<void> };
+  /** High-vitals alert shown as an on-screen popup until dismissed, or null. */
+  activeAlert: ActiveAlert | null;
+  dismissAlert: () => void;
   /** Forces RESTLESS for 15s (daemon endpoint, or the mock generator). */
   simulateRestless: () => Promise<void>;
   /** Turn the camera on/off. Off stops capture and the Presage session (no credits used). */
@@ -60,12 +65,15 @@ export function TelemetryProvider({ children }: { children: ReactNode }) {
   const [connected, setConnected] = useState(MOCK);
   const [stale, setStale] = useState(true);
   const [sourceMode, setSourceModeState] = useState<"SIMULATED" | "REALTIME">("SIMULATED");
-  const { events, stateSince, record, alerts } = useActivity();
+  const { events, stateSince, record, recordAlert, activeAlert, dismissAlert, alerts } = useActivity();
   const lastMessageAt = useRef(0);
   const mockSource = useRef<MockTelemetrySource | null>(null);
+  const vitalsMonitor = useRef(new VitalsAlertMonitor(VITALS_ALERT));
 
   const handleMessage = useCallback((t: Telemetry) => {
     lastMessageAt.current = Date.now();
+    const vitalsAlert = vitalsMonitor.current.observe(t);
+    if (vitalsAlert) recordAlert(vitalsAlert);
     setStale(false);
     setLatest(t);
     if (t.mode) {
@@ -73,7 +81,7 @@ export function TelemetryProvider({ children }: { children: ReactNode }) {
     }
     setHistory((prev) => [...prev.slice(-(HISTORY_LENGTH - 1)), t]);
     record(toneOf(t, false, t.mode ?? sourceMode), t.camera);
-  }, [record, sourceMode]);
+  }, [record, recordAlert, sourceMode]);
 
   // Query initial mode from daemon
   useEffect(() => {
@@ -219,6 +227,8 @@ export function TelemetryProvider({ children }: { children: ReactNode }) {
         events,
         stateSince,
         alerts,
+        activeAlert,
+        dismissAlert,
         simulateRestless,
         setCameraEnabled,
       }}

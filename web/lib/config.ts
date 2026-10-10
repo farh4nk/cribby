@@ -78,6 +78,22 @@ export const MOCK = process.env.NEXT_PUBLIC_MOCK === "1";
 // Below this, vitals are not trusted (matches the daemon's SIGNAL_UNSTABLE gate).
 export const MIN_CONFIDENCE = 0.4;
 
+// High-vitals desktop alert. These are configurable defaults, not medical thresholds.
+// Override at build time to demo it, e.g. NEXT_PUBLIC_ALERT_BRPM_HIGH=30 NEXT_PUBLIC_ALERT_SUSTAIN_S=5
+const num = (v: string | undefined, fallback: number) => {
+  const n = v === undefined || v === "" ? NaN : Number(v);
+  return Number.isFinite(n) ? n : fallback;
+};
+export const VITALS_ALERT = {
+  brpmHigh: num(process.env.NEXT_PUBLIC_ALERT_BRPM_HIGH, 60), // breaths per minute
+  bpmHigh: num(process.env.NEXT_PUBLIC_ALERT_BPM_HIGH, 180), // heartbeats per minute
+  sustainS: num(process.env.NEXT_PUBLIC_ALERT_SUSTAIN_S, 30), // must stay high this long
+  cooldownS: num(process.env.NEXT_PUBLIC_ALERT_COOLDOWN_S, 600), // min gap between alerts
+  minConfidence: num(process.env.NEXT_PUBLIC_ALERT_MIN_CONFIDENCE, 0.5),
+  // Demo only: also alert on the daemon's simulated readings (never on by default).
+  onSimulated: process.env.NEXT_PUBLIC_ALERT_SIMULATED === "1",
+};
+
 export const TELEMETRY_HZ = 2;
 export const HISTORY_LENGTH = 120; // ~60s at 2 Hz
 export const STALE_AFTER_MS = 3000;
