@@ -44,7 +44,7 @@
 }
 
 @theme inline {
-  --font-display: var(--font-fraunces), Georgia, serif;
+  --font-display: var(--font-milkyway), var(--font-instrument), system-ui, sans-serif;
   --font-sans: var(--font-instrument), system-ui, sans-serif;
   --color-ink: var(--ink);
   --color-ink-dim: var(--ink-dim);

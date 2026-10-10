@@ -14,9 +14,10 @@ const suggestedQuestions = (name: string) => [
 interface GeminiNightQAProps {
   bedtime?: string;
   wakeTime?: string;
+  className?: string;
 }
 
-export function GeminiNightQA({ bedtime = "20:00", wakeTime = "07:00" }: GeminiNightQAProps) {
+export function GeminiNightQA({ bedtime = "20:00", wakeTime = "07:00", className }: GeminiNightQAProps) {
   const name = useBabyName() ?? "";
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState<string | null>(null);
@@ -56,7 +57,7 @@ export function GeminiNightQA({ bedtime = "20:00", wakeTime = "07:00" }: GeminiN
   };
 
   return (
-    <section className="mt-12 rounded-3xl bg-white/5 p-6 ring-1 ring-white/10 sm:p-8">
+    <section className={className || "mt-12 rounded-3xl bg-white/5 p-6 ring-1 ring-white/10 sm:p-8"}>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div className="flex items-center gap-2.5">
           <svg className="h-5 w-5 text-tone" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -68,7 +69,7 @@ export function GeminiNightQA({ bedtime = "20:00", wakeTime = "07:00" }: GeminiN
             />
           </svg>
           <h2 className="font-display text-2xl text-ink [font-variation-settings:'SOFT'_100]">
-            Ask Gemini About {babyTitle(name)}’s Night
+            Ask about {babyTitle(name)}’s sleep
           </h2>
         </div>
         <span className="text-xs text-ink-faint">Interactive Sleep Intelligence</span>

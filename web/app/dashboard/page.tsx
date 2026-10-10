@@ -2,46 +2,22 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { Disclaimer } from "@/components/Disclaimer";
+import { EditBabyProfileModal } from "@/components/EditBabyProfileModal";
 import { GeminiNightQA } from "@/components/GeminiNightQA";
 import { Header } from "@/components/Header";
 import { babyTitle, getBabyName, useBabyName } from "@/lib/babyName";
 import { analyticsUrl } from "@/lib/config";
 import { useAuth } from "@/context/AuthProvider";
-
-interface NightlySummaryResponse {
-  baby_name: string;
-  model_used?: string;
-  summary_bullets: string[];
-  metrics: {
-    bedtime?: string;
-    wake_time?: string;
-    window_start?: string;
-    window_end?: string;
-    scheduled_hours: number;
-    sleep_hours: number;
-    sleep_efficiency_percent: number;
-    avg_brpm: number;
-    avg_bpm: number;
-    restless_spikes_count: number;
-    soothe_interventions_count: number;
-    avg_soothe_resolve_seconds: number;
-  };
-}
-
-interface TimelineEntry {
-  time: string;
-  state: string;
-  breathing_rate: number;
-  heart_rate: number;
-  motion_index: number;
-}
-
-interface TrendEntry {
-  time: string;
-  breathing_rate: number;
-  heart_rate: number;
-  state: string;
-}
+import {
+  NightlySummaryResponse,
+  TimelineEntry,
+  TrendEntry,
+  getDashboardCacheKey,
+  getCachedDashboardData,
+  setCachedDashboardData,
+  isDashboardCacheFresh,
+  formatCacheAge,
+} from "@/lib/dashboardCache";
 
 const STATE_COLORS: Record<string, { bg: string; text: string; label: string }> = {
   ASLEEP: { bg: "bg-indigo-400/80", text: "text-indigo-300", label: "Asleep" },
@@ -66,40 +42,123 @@ function formatTime12(timeStr: string): string {
   }
 }
 
+function formatPointTime(timeStr?: string): string {
+  if (!timeStr) return "";
+  try {
+    const d = new Date(timeStr);
+    if (isNaN(d.getTime())) return timeStr;
+    return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
+  } catch {
+    return timeStr;
+  }
+}
+
+const fallbackTrend: TrendEntry[] = [
+  { time: "2026-10-10T20:00:00Z", breathing_rate: 24.2, heart_rate: 110, state: "DROWSY" },
+  { time: "2026-10-10T21:00:00Z", breathing_rate: 23.8, heart_rate: 108, state: "ASLEEP" },
+  { time: "2026-10-10T22:30:00Z", breathing_rate: 24.5, heart_rate: 112, state: "ASLEEP" },
+  { time: "2026-10-10T00:00:00Z", breathing_rate: 25.1, heart_rate: 115, state: "ASLEEP" },
+  { time: "2026-10-10T01:30:00Z", breathing_rate: 24.0, heart_rate: 107, state: "ASLEEP" },
+  { time: "2026-10-10T03:00:00Z", breathing_rate: 34.6, heart_rate: 136, state: "RESTLESS" },
+  { time: "2026-10-10T03:15:00Z", breathing_rate: 31.2, heart_rate: 128, state: "RESTLESS" },
+  { time: "2026-10-10T03:30:00Z", breathing_rate: 25.0, heart_rate: 110, state: "ASLEEP" },
+  { time: "2026-10-10T05:00:00Z", breathing_rate: 24.1, heart_rate: 109, state: "ASLEEP" },
+  { time: "2026-10-10T06:30:00Z", breathing_rate: 25.8, heart_rate: 114, state: "DROWSY" },
+  { time: "2026-10-10T07:00:00Z", breathing_rate: 27.4, heart_rate: 122, state: "AWAKE" },
+];
+
 export default function DashboardPage() {
   const title = babyTitle(useBabyName() ?? "");
-  const { baby, updateBaby } = useAuth();
+  const { baby } = useAuth();
   const [bedtime, setBedtime] = useState(baby?.bedtime || "20:00");
   const [wakeTime, setWakeTime] = useState(baby?.wake_time || "07:00");
   const [summary, setSummary] = useState<NightlySummaryResponse | null>(null);
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
   const [trend, setTrend] = useState<TrendEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isRevalidating, setIsRevalidating] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [hoveredTrendIndex, setHoveredTrendIndex] = useState<number | null>(null);
 
-  const loadDashboardData = useCallback(async (bTime = bedtime, wTime = wakeTime) => {
-    setLoading(true);
+  const activeTrend = trend.length > 1 ? trend : fallbackTrend;
+  const activePoint = hoveredTrendIndex !== null ? activeTrend[hoveredTrendIndex] : null;
+
+  const handleChartHover = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clientX = "touches" in e ? e.touches[0]?.clientX : e.clientX;
+    if (clientX === undefined) return;
+    const x = Math.max(0, Math.min(rect.width, clientX - rect.left));
+    const fraction = x / rect.width;
+    const idx = Math.round(fraction * (activeTrend.length - 1));
+    setHoveredTrendIndex(Math.max(0, Math.min(activeTrend.length - 1, idx)));
+  };
+
+  const loadDashboardData = useCallback(async (bTime = bedtime, wTime = wakeTime, force = false) => {
+    const bName = babyTitle(getBabyName());
+    const cacheKey = getDashboardCacheKey(bName, bTime, wTime);
+    const cached = getCachedDashboardData(cacheKey);
+
+    // 1. Instant Cache Hit: Show cached telemetry without blocking user
+    if (cached && !force) {
+      setSummary(cached.summary);
+      setTimeline(cached.timeline);
+      setTrend(cached.trend);
+      setLastUpdated(cached.fetchedAt);
+      setLoading(false);
+
+      // If fresh within 5-minute TTL, skip remote network calls entirely
+      if (isDashboardCacheFresh(cached)) {
+        return;
+      }
+      setIsRevalidating(true);
+    } else {
+      setLoading(true);
+    }
+
     setError(null);
     try {
       const [sumRes, timeRes, trendRes] = await Promise.all([
-        fetch(`${analyticsUrl()}/api/nightly-summary?baby_name=${encodeURIComponent(babyTitle(getBabyName()))}&bedtime=${bTime}&wake_time=${wTime}`),
+        fetch(`${analyticsUrl()}/api/nightly-summary?baby_name=${encodeURIComponent(bName)}&bedtime=${bTime}&wake_time=${wTime}`),
         fetch(`${analyticsUrl()}/api/sleep-timeline?bedtime=${bTime}&wake_time=${wTime}&limit=120`),
         fetch(`${analyticsUrl()}/api/vitals-trend?bedtime=${bTime}&wake_time=${wTime}&limit=60`),
       ]);
 
-      if (sumRes.ok) setSummary(await sumRes.json());
+      let newSummary = cached?.summary ?? null;
+      let newTimeline = cached?.timeline ?? [];
+      let newTrend = cached?.trend ?? [];
+
+      if (sumRes.ok) newSummary = await sumRes.json();
       if (timeRes.ok) {
         const timeData = await timeRes.json();
-        setTimeline(timeData.timeline || []);
+        newTimeline = timeData.timeline || [];
       }
       if (trendRes.ok) {
         const trendData = await trendRes.json();
-        setTrend(trendData.trend || []);
+        newTrend = trendData.trend || [];
       }
+
+      const now = Date.now();
+      setSummary(newSummary);
+      setTimeline(newTimeline);
+      setTrend(newTrend);
+      setLastUpdated(now);
+
+      // Store in memory & sessionStorage
+      setCachedDashboardData(cacheKey, {
+        summary: newSummary,
+        timeline: newTimeline,
+        trend: newTrend,
+        fetchedAt: now,
+      });
     } catch {
-      setError("Unable to connect to Tiger Data analytics API");
+      if (!cached) {
+        setError("Unable to connect to Tiger Data analytics API");
+      }
     } finally {
       setLoading(false);
+      setIsRevalidating(false);
     }
   }, [bedtime, wakeTime]);
 
@@ -124,108 +183,58 @@ export default function DashboardPage() {
     <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-5 sm:px-8">
       <Header />
 
-      {/* Hero title */}
-      <section className="mt-4">
-        <span className="text-xs font-semibold uppercase tracking-wider text-tone">Night Intelligence</span>
-        <h1 className="mt-1 font-display text-4xl text-ink [font-variation-settings:'SOFT'_100,'opsz'_144] sm:text-5xl">
-          {title}’s Sleep Report
-        </h1>
-        <p className="mt-2 text-sm text-ink-dim">
-          Tiger Data time-series vitals scoped to your scheduled bedtime window & Gemini 3.5 sleep analytics
-        </p>
-      </section>
-
-      {/* Bedtime Window Controls Card */}
-      <section className="mt-8 rounded-3xl bg-white/5 p-6 ring-1 ring-white/10 sm:p-7">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold text-tone">🌙 Bedtime & Wake Schedule</span>
-              <span className="rounded-full bg-tone/15 px-2.5 py-0.5 text-[11px] font-medium text-tone">
-                Parent Configured
+      {/* Hero title + Controls (Refresh + Edit Profile & Schedule Trigger) */}
+      <section className="mt-4 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <span className="text-xs font-semibold uppercase tracking-wider text-tone">Night Intelligence</span>
+          <h1 className="mt-1 font-display text-4xl text-ink [font-variation-settings:'SOFT'_100,'opsz'_144] sm:text-5xl">
+            {title}’s Sleep Report
+          </h1>
+          <p className="mt-2 text-sm text-ink-dim flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span>
+              Scheduled night: <span className="font-medium text-ink">{formatTime12(bedtime)} – {formatTime12(wakeTime)}</span> · Scoped to Tiger Data Timescale vitals & Gemini sleep intelligence
+            </span>
+            {lastUpdated && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/5 px-2.5 py-0.5 text-xs text-tone/90 ring-1 ring-white/10">
+                <span className="h-1.5 w-1.5 rounded-full bg-tone" />
+                Cached · {formatCacheAge(lastUpdated)}
               </span>
-            </div>
-            <p className="mt-1 text-xs text-ink-dim">
-              Set {title}’s scheduled crib hours. Telemetry queries, hypnogram, and Gemini summaries scope to this exact window.
-            </p>
-          </div>
-
-          {/* Quick preset buttons */}
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-ink-faint">Presets:</span>
-            {[
-              { label: "8 PM – 7 AM", b: "20:00", w: "07:00" },
-              { label: "7:30 PM – 6:30 AM", b: "19:30", w: "06:30" },
-              { label: "8:30 PM – 6:30 AM", b: "20:30", w: "06:30" },
-              { label: "9 PM – 7:30 AM", b: "21:00", w: "07:30" },
-            ].map((p) => (
-              <button
-                key={p.label}
-                type="button"
-                onClick={() => {
-                  setBedtime(p.b);
-                  setWakeTime(p.w);
-                  loadDashboardData(p.b, p.w);
-                }}
-                className={`rounded-full px-3 py-1 text-xs transition ${
-                  bedtime === p.b && wakeTime === p.w
-                    ? "bg-tone text-[#0a0b15] font-semibold"
-                    : "bg-white/5 text-ink-dim ring-1 ring-white/10 hover:bg-white/10 hover:text-ink"
-                }`}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
+            )}
+          </p>
         </div>
-
-        {/* Schedule Inputs */}
-        <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div className="rounded-2xl bg-white/5 p-3.5 ring-1 ring-white/10">
-            <label className="text-xs text-ink-faint">Bedtime (Put to Bed)</label>
-            <div className="mt-1.5 flex items-center gap-2">
-              <input
-                type="time"
-                value={bedtime}
-                onChange={(e) => setBedtime(e.target.value)}
-                className="w-full rounded-xl bg-black/30 px-3 py-1.5 text-sm text-ink ring-1 ring-white/10 focus:outline-none focus:ring-tone/50"
-              />
-              <span className="text-xs text-tone whitespace-nowrap font-medium">
-                {formatTime12(bedtime)}
-              </span>
-            </div>
-          </div>
-
-          <div className="rounded-2xl bg-white/5 p-3.5 ring-1 ring-white/10">
-            <label className="text-xs text-ink-faint">Wake Time (Morning Wake-Up)</label>
-            <div className="mt-1.5 flex items-center gap-2">
-              <input
-                type="time"
-                value={wakeTime}
-                onChange={(e) => setWakeTime(e.target.value)}
-                className="w-full rounded-xl bg-black/30 px-3 py-1.5 text-sm text-ink ring-1 ring-white/10 focus:outline-none focus:ring-tone/50"
-              />
-              <span className="text-xs text-tone whitespace-nowrap font-medium">
-                {formatTime12(wakeTime)}
-              </span>
-            </div>
-          </div>
-
-          <div className="flex items-center">
-            <button
-              type="button"
-              onClick={() => {
-                loadDashboardData(bedtime, wakeTime);
-                if (baby) {
-                  updateBaby({ bedtime, wake_time: wakeTime });
-                }
-              }}
-              disabled={loading}
-              className="w-full rounded-2xl bg-tone px-4 py-3 text-sm font-semibold text-[#0a0b15] transition hover:opacity-90 disabled:opacity-50"
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => loadDashboardData(bedtime, wakeTime, true)}
+            disabled={loading || isRevalidating}
+            className="flex items-center gap-1.5 rounded-full bg-white/5 px-3 py-2 text-xs font-medium text-ink ring-1 ring-white/10 transition hover:bg-white/10 hover:text-tone cursor-pointer disabled:opacity-50"
+            title="Sync fresh telemetry from Tiger Data"
+          >
+            <svg
+              className={`h-3.5 w-3.5 text-tone ${isRevalidating ? "animate-spin" : ""}`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
             >
-              {loading ? "Re-scoping…" : "Apply Bedtime Window"}
-            </button>
-          </div>
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+              />
+            </svg>
+            <span>{isRevalidating ? "Syncing…" : "Refresh"}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setEditModalOpen(true)}
+            className="flex items-center gap-2 rounded-full bg-white/5 px-4 py-2 text-xs font-medium text-ink ring-1 ring-white/10 transition hover:bg-white/10 hover:text-tone cursor-pointer"
+          >
+            <svg className="h-4 w-4 text-tone" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+            </svg>
+            <span>Edit Baby Profile & Schedule</span>
+          </button>
         </div>
       </section>
 
@@ -242,7 +251,7 @@ export default function DashboardPage() {
           <button
             type="button"
             onClick={() => loadDashboardData(bedtime, wakeTime)}
-            className="mt-3 text-xs underline underline-offset-4 hover:text-ink"
+            className="mt-3 text-xs underline underline-offset-4 hover:text-ink cursor-pointer"
           >
             Retry loading
           </button>
@@ -251,54 +260,281 @@ export default function DashboardPage() {
 
       {!loading && (
         <>
-          {/* Key Metrics Grid */}
-          <section className="mt-10 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-            <div className="rounded-2xl bg-white/5 p-4 ring-1 ring-white/10">
-              <span className="text-xs text-ink-faint">Sleep Efficiency</span>
-              <p className="mt-2 font-display text-2xl text-tone tabular-nums [font-variation-settings:'SOFT'_100]">
-                {summary?.metrics.sleep_efficiency_percent ?? "100"} <span className="text-sm font-sans text-ink-dim">%</span>
-              </p>
-              <span className="mt-1 block text-[11px] text-ink-faint">Target: &gt;85%</span>
+          {/* 1. Vitals Trends: Breathing & Heart Rate Charts with Interactive Scrubber */}
+          <section className="mt-10 grid gap-8 lg:grid-cols-2">
+            {/* Breathing Rate Trend Card */}
+            <div className="rounded-3xl bg-white/5 p-6 ring-1 ring-white/10 sm:p-8">
+              <div className="flex items-baseline justify-between">
+                <div>
+                  <h3 className="font-display text-xl text-ink [font-variation-settings:'SOFT'_100]">
+                    Breathing Rate (BrPM)
+                  </h3>
+                  <p className="mt-1 text-xs text-ink-dim">
+                    {activePoint ? (
+                      <span className="flex items-center gap-1.5 text-ink">
+                        <span className="tabular-nums font-medium">{formatPointTime(activePoint.time)}</span>
+                        <span>·</span>
+                        <span className={`inline-flex items-center gap-1 font-semibold ${STATE_COLORS[activePoint.state]?.text || "text-tone"}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${STATE_COLORS[activePoint.state]?.bg || "bg-tone"}`} />
+                          {STATE_COLORS[activePoint.state]?.label || activePoint.state}
+                        </span>
+                      </span>
+                    ) : (
+                      "Target infant range: 20–30 breaths/min"
+                    )}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <span className="font-display text-2xl text-tone tabular-nums">
+                    {activePoint
+                      ? activePoint.breathing_rate.toFixed(1)
+                      : (activeTrend[activeTrend.length - 1]?.breathing_rate.toFixed(1) || "24.3")}
+                  </span>
+                  <span className="ml-1 text-xs font-medium text-ink-dim">BrPM</span>
+                </div>
+              </div>
+
+              {/* Interactive SVG Trend Sparkline Chart */}
+              <div
+                className="relative mt-6 h-36 w-full cursor-crosshair select-none touch-none"
+                onMouseMove={handleChartHover}
+                onMouseLeave={() => setHoveredTrendIndex(null)}
+                onTouchMove={handleChartHover}
+                onTouchEnd={() => setHoveredTrendIndex(null)}
+              >
+                {/* Floating tooltip above active point */}
+                {activePoint && hoveredTrendIndex !== null && (
+                  <div
+                    className={`pointer-events-none absolute -top-1 z-30 transition-transform duration-75 ${
+                      (hoveredTrendIndex / (activeTrend.length - 1)) * 100 < 15
+                        ? "translate-x-0"
+                        : (hoveredTrendIndex / (activeTrend.length - 1)) * 100 > 85
+                        ? "-translate-x-full"
+                        : "-translate-x-1/2"
+                    }`}
+                    style={{ left: `${(hoveredTrendIndex / (activeTrend.length - 1)) * 100}%` }}
+                  >
+                    <div className="rounded-xl bg-[#0f111f]/95 px-3 py-1.5 shadow-2xl ring-1 ring-white/15 backdrop-blur-md">
+                      <div className="flex items-center gap-2">
+                        <span className="font-display text-sm font-semibold text-tone">
+                          {activePoint.breathing_rate.toFixed(1)} BrPM
+                        </span>
+                        <span
+                          className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                            STATE_COLORS[activePoint.state]?.text || "text-tone"
+                          } bg-white/5`}
+                        >
+                          {STATE_COLORS[activePoint.state]?.label || activePoint.state}
+                        </span>
+                      </div>
+                      <div className="mt-0.5 text-[10px] tabular-nums text-ink-dim">
+                        {formatPointTime(activePoint.time)}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <svg className="h-full w-full overflow-visible" viewBox="0 0 300 100" preserveAspectRatio="none">
+                  {/* Target 20-30 baseline zone */}
+                  <rect x="0" y="42" width="300" height="32" fill="currentColor" className="text-tone/10" />
+                  <line x1="0" y1="58" x2="300" y2="58" stroke="currentColor" strokeDasharray="4 4" className="text-tone/20" />
+
+                  {/* Data polyline */}
+                  {activeTrend.length > 1 && (
+                    <polyline
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="text-tone"
+                      points={activeTrend
+                        .map((pt, i) => {
+                          const x = (i / (activeTrend.length - 1)) * 300;
+                          const clamped = Math.max(15, Math.min(40, pt.breathing_rate || 24));
+                          const y = 90 - ((clamped - 15) / 25) * 80;
+                          return `${x},${y}`;
+                        })
+                        .join(" ")}
+                    />
+                  )}
+
+                  {/* Scrubber indicator */}
+                  {activePoint && hoveredTrendIndex !== null && (
+                    <>
+                      {(() => {
+                        const hoverX = (hoveredTrendIndex / (activeTrend.length - 1)) * 300;
+                        const clamped = Math.max(15, Math.min(40, activePoint.breathing_rate || 24));
+                        const hoverY = 90 - ((clamped - 15) / 25) * 80;
+                        return (
+                          <g className="pointer-events-none">
+                            <line
+                              x1={hoverX}
+                              y1={0}
+                              x2={hoverX}
+                              y2={100}
+                              stroke="currentColor"
+                              strokeWidth="1.5"
+                              strokeDasharray="3 3"
+                              className="text-white/40"
+                            />
+                            <circle cx={hoverX} cy={hoverY} r="7" className="fill-tone/30 animate-ping" />
+                            <circle cx={hoverX} cy={hoverY} r="4" className="fill-tone stroke-white stroke-[1.5]" />
+                          </g>
+                        );
+                      })()}
+                    </>
+                  )}
+                </svg>
+              </div>
+
+              <div className="mt-2 flex justify-between text-xs text-ink-faint">
+                <span>{formatPointTime(activeTrend[0]?.time) || `Bedtime (${formatTime12(bedtime)})`}</span>
+                <span className="italic text-ink-dim/70">
+                  {hoveredTrendIndex !== null ? "Inspecting point…" : "Hover / scroll cursor to inspect"}
+                </span>
+                <span>{formatPointTime(activeTrend[activeTrend.length - 1]?.time) || `Wake (${formatTime12(wakeTime)})`}</span>
+              </div>
             </div>
-            <div className="rounded-2xl bg-white/5 p-4 ring-1 ring-white/10">
-              <span className="text-xs text-ink-faint">Scheduled Crib Time</span>
-              <p className="mt-2 font-display text-2xl text-ink tabular-nums [font-variation-settings:'SOFT'_100]">
-                {summary?.metrics.scheduled_hours ?? "11.0"} <span className="text-sm font-sans text-ink-dim">hrs</span>
-              </p>
-              <span className="mt-1 block text-[11px] text-ink-faint">{formatTime12(bedtime)} – {formatTime12(wakeTime)}</span>
-            </div>
-            <div className="rounded-2xl bg-white/5 p-4 ring-1 ring-white/10">
-              <span className="text-xs text-ink-faint">Total Asleep</span>
-              <p className="mt-2 font-display text-2xl text-ink tabular-nums [font-variation-settings:'SOFT'_100]">
-                {summary?.metrics.sleep_hours ?? "11.0"} <span className="text-sm font-sans text-ink-dim">hrs</span>
-              </p>
-              <span className="mt-1 block text-[11px] text-ink-faint">Logged calm rest</span>
-            </div>
-            <div className="rounded-2xl bg-white/5 p-4 ring-1 ring-white/10">
-              <span className="text-xs text-ink-faint">Avg Breathing</span>
-              <p className="mt-2 font-display text-2xl text-ink tabular-nums [font-variation-settings:'SOFT'_100]">
-                {summary?.metrics.avg_brpm ?? "24.3"} <span className="text-sm font-sans text-ink-dim">BrPM</span>
-              </p>
-              <span className="mt-1 block text-[11px] text-ink-faint">Baseline: 20–30</span>
-            </div>
-            <div className="rounded-2xl bg-white/5 p-4 ring-1 ring-white/10">
-              <span className="text-xs text-ink-faint">Avg Pulse</span>
-              <p className="mt-2 font-display text-2xl text-ink tabular-nums [font-variation-settings:'SOFT'_100]">
-                {summary?.metrics.avg_bpm ?? "109"} <span className="text-sm font-sans text-ink-dim">BPM</span>
-              </p>
-              <span className="mt-1 block text-[11px] text-ink-faint">Baseline: 100–130</span>
-            </div>
-            <div className="rounded-2xl bg-white/5 p-4 ring-1 ring-white/10">
-              <span className="text-xs text-ink-faint">Auto-Soothed</span>
-              <p className="mt-2 font-display text-2xl text-ink tabular-nums [font-variation-settings:'SOFT'_100]">
-                {summary?.metrics.soothe_interventions_count ?? "2"} <span className="text-sm font-sans text-ink-dim">times</span>
-              </p>
-              <span className="mt-1 block text-[11px] text-ink-faint">~{summary?.metrics.avg_soothe_resolve_seconds ?? 40}s avg settle</span>
+
+            {/* Heart Rate Trend Card */}
+            <div className="rounded-3xl bg-white/5 p-6 ring-1 ring-white/10 sm:p-8">
+              <div className="flex items-baseline justify-between">
+                <div>
+                  <h3 className="font-display text-xl text-ink [font-variation-settings:'SOFT'_100]">
+                    Heart Rate (BPM)
+                  </h3>
+                  <p className="mt-1 text-xs text-ink-dim">
+                    {activePoint ? (
+                      <span className="flex items-center gap-1.5 text-ink">
+                        <span className="tabular-nums font-medium">{formatPointTime(activePoint.time)}</span>
+                        <span>·</span>
+                        <span className={`inline-flex items-center gap-1 font-semibold ${STATE_COLORS[activePoint.state]?.text || "text-rose-300"}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${STATE_COLORS[activePoint.state]?.bg || "bg-rose-400"}`} />
+                          {STATE_COLORS[activePoint.state]?.label || activePoint.state}
+                        </span>
+                      </span>
+                    ) : (
+                      "Normal infant resting range: 100–130 BPM"
+                    )}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <span className="font-display text-2xl text-rose-300 tabular-nums">
+                    {activePoint
+                      ? Math.round(activePoint.heart_rate)
+                      : Math.round(activeTrend[activeTrend.length - 1]?.heart_rate || 109)}
+                  </span>
+                  <span className="ml-1 text-xs font-medium text-ink-dim">BPM</span>
+                </div>
+              </div>
+
+              {/* Interactive SVG Trend Sparkline Chart */}
+              <div
+                className="relative mt-6 h-36 w-full cursor-crosshair select-none touch-none"
+                onMouseMove={handleChartHover}
+                onMouseLeave={() => setHoveredTrendIndex(null)}
+                onTouchMove={handleChartHover}
+                onTouchEnd={() => setHoveredTrendIndex(null)}
+              >
+                {/* Floating tooltip above active point */}
+                {activePoint && hoveredTrendIndex !== null && (
+                  <div
+                    className={`pointer-events-none absolute -top-1 z-30 transition-transform duration-75 ${
+                      (hoveredTrendIndex / (activeTrend.length - 1)) * 100 < 15
+                        ? "translate-x-0"
+                        : (hoveredTrendIndex / (activeTrend.length - 1)) * 100 > 85
+                        ? "-translate-x-full"
+                        : "-translate-x-1/2"
+                    }`}
+                    style={{ left: `${(hoveredTrendIndex / (activeTrend.length - 1)) * 100}%` }}
+                  >
+                    <div className="rounded-xl bg-[#0f111f]/95 px-3 py-1.5 shadow-2xl ring-1 ring-white/15 backdrop-blur-md">
+                      <div className="flex items-center gap-2">
+                        <span className="font-display text-sm font-semibold text-rose-300">
+                          {Math.round(activePoint.heart_rate)} BPM
+                        </span>
+                        <span
+                          className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                            STATE_COLORS[activePoint.state]?.text || "text-rose-300"
+                          } bg-white/5`}
+                        >
+                          {STATE_COLORS[activePoint.state]?.label || activePoint.state}
+                        </span>
+                      </div>
+                      <div className="mt-0.5 text-[10px] tabular-nums text-ink-dim">
+                        {formatPointTime(activePoint.time)}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <svg className="h-full w-full overflow-visible" viewBox="0 0 300 100" preserveAspectRatio="none">
+                  {/* Target 100-130 baseline zone */}
+                  <rect x="0" y="36.6" width="300" height="40" fill="currentColor" className="text-rose-400/10" />
+                  <line x1="0" y1="56.6" x2="300" y2="56.6" stroke="currentColor" strokeDasharray="4 4" className="text-rose-400/20" />
+
+                  {/* Data polyline */}
+                  {activeTrend.length > 1 && (
+                    <polyline
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="text-rose-300"
+                      points={activeTrend
+                        .map((pt, i) => {
+                          const x = (i / (activeTrend.length - 1)) * 300;
+                          const clamped = Math.max(90, Math.min(150, pt.heart_rate || 109));
+                          const y = 90 - ((clamped - 90) / 60) * 80;
+                          return `${x},${y}`;
+                        })
+                        .join(" ")}
+                    />
+                  )}
+
+                  {/* Scrubber indicator */}
+                  {activePoint && hoveredTrendIndex !== null && (
+                    <>
+                      {(() => {
+                        const hoverX = (hoveredTrendIndex / (activeTrend.length - 1)) * 300;
+                        const clamped = Math.max(90, Math.min(150, activePoint.heart_rate || 109));
+                        const hoverY = 90 - ((clamped - 90) / 60) * 80;
+                        return (
+                          <g className="pointer-events-none">
+                            <line
+                              x1={hoverX}
+                              y1={0}
+                              x2={hoverX}
+                              y2={100}
+                              stroke="currentColor"
+                              strokeWidth="1.5"
+                              strokeDasharray="3 3"
+                              className="text-white/40"
+                            />
+                            <circle cx={hoverX} cy={hoverY} r="7" className="fill-rose-400/30 animate-ping" />
+                            <circle cx={hoverX} cy={hoverY} r="4" className="fill-rose-300 stroke-white stroke-[1.5]" />
+                          </g>
+                        );
+                      })()}
+                    </>
+                  )}
+                </svg>
+              </div>
+
+              <div className="mt-2 flex justify-between text-xs text-ink-faint">
+                <span>{formatPointTime(activeTrend[0]?.time) || `Bedtime (${formatTime12(bedtime)})`}</span>
+                <span className="italic text-ink-dim/70">
+                  {hoveredTrendIndex !== null ? "Inspecting point…" : "Hover / scroll cursor to inspect"}
+                </span>
+                <span>{formatPointTime(activeTrend[activeTrend.length - 1]?.time) || `Wake (${formatTime12(wakeTime)})`}</span>
+              </div>
             </div>
           </section>
 
-          {/* Sleep Stages Timeline (Hypnogram) */}
-          <section className="mt-12 rounded-3xl bg-white/5 p-6 ring-1 ring-white/10 sm:p-8">
+          {/* 2. Sleep Stages Timeline (Underneath Vitals) */}
+          <section className="mt-8 rounded-3xl bg-white/5 p-6 ring-1 ring-white/10 sm:p-8">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <h2 className="font-display text-2xl text-ink [font-variation-settings:'SOFT'_100]">
                 Sleep State Timeline
@@ -349,138 +585,68 @@ export default function DashboardPage() {
             </div>
           </section>
 
-          {/* Vitals Trends: Breathing & Heart Rate Charts */}
-          <section className="mt-12 grid gap-8 lg:grid-cols-2">
-            {/* Breathing Rate Trend Card */}
-            <div className="rounded-3xl bg-white/5 p-6 ring-1 ring-white/10 sm:p-8">
-              <div className="flex items-baseline justify-between">
-                <div>
-                  <h3 className="font-display text-xl text-ink [font-variation-settings:'SOFT'_100]">
-                    Breathing Rate (BrPM)
-                  </h3>
-                  <p className="mt-1 text-xs text-ink-dim">Target infant range: 20–30 breaths/min</p>
+          {/* 3. Summary & Q&A Chat Side-by-Side */}
+          <div className="mt-8 grid gap-8 lg:grid-cols-2">
+            {/* Morning Briefing Summary */}
+            <section className="flex flex-col justify-between rounded-3xl bg-white/5 p-6 ring-1 ring-white/10 sm:p-8">
+              <div>
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <h2 className="font-display text-2xl text-ink [font-variation-settings:'SOFT'_100]">
+                    Summary
+                  </h2>
+                  <span className="text-xs text-ink-faint">
+                    {formatTime12(bedtime)} – {formatTime12(wakeTime)}
+                  </span>
                 </div>
-                <span className="font-display text-2xl text-tone tabular-nums">
-                  {trend.length > 0 ? trend[trend.length - 1].breathing_rate : 24.3}
-                </span>
-              </div>
-
-              {/* SVG Trend Sparkline Chart */}
-              <div className="mt-6 h-36 w-full">
-                <svg className="h-full w-full overflow-visible" viewBox="0 0 300 100" preserveAspectRatio="none">
-                  {/* Target 20-30 baseline zone */}
-                  <rect x="0" y="30" width="300" height="40" fill="currentColor" className="text-tone/10" />
-                  <line x1="0" y1="50" x2="300" y2="50" stroke="currentColor" strokeDasharray="4 4" className="text-tone/20" />
-                  {/* Data path */}
-                  {trend.length > 1 && (
-                    <polyline
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="text-tone"
-                      points={trend
-                        .map((pt, i) => {
-                          const x = (i / (trend.length - 1)) * 300;
-                          const clamped = Math.max(15, Math.min(40, pt.breathing_rate || 24));
-                          const y = 90 - ((clamped - 15) / 25) * 80;
-                          return `${x},${y}`;
-                        })
-                        .join(" ")}
-                    />
+                <ul className="mt-6 flex flex-col gap-4">
+                  {summary?.summary_bullets.map((bullet, idx) => (
+                    <li
+                      key={idx}
+                      className="font-display text-base leading-relaxed text-ink [font-variation-settings:'SOFT'_100] sm:text-lg"
+                    >
+                      {bullet}
+                    </li>
+                  )) || (
+                    <>
+                      <li className="font-display text-base text-ink [font-variation-settings:'SOFT'_100] sm:text-lg">
+                        🌙 {title} slept {summary?.metrics.sleep_hours ?? 11.0} hours with {summary?.metrics.sleep_efficiency_percent ?? 100}% sleep efficiency during the scheduled bedtime window.
+                      </li>
+                      <li className="font-display text-base text-ink [font-variation-settings:'SOFT'_100] sm:text-lg">
+                        🕊️ Auto-soothe intervened {summary?.metrics.soothe_interventions_count ?? 2} times during restlessness, settling restlessness in under {summary?.metrics.avg_soothe_resolve_seconds ?? 40}s.
+                      </li>
+                      <li className="font-display text-base text-ink [font-variation-settings:'SOFT'_100] sm:text-lg">
+                        ✨ Vital signals remained steady throughout the night, with an average breathing rate of {summary?.metrics.avg_brpm ?? 24.3} BrPM and pulse of {summary?.metrics.avg_bpm ?? 109} BPM.
+                      </li>
+                    </>
                   )}
-                </svg>
+                </ul>
               </div>
-              <div className="mt-2 flex justify-between text-xs text-ink-faint">
-                <span>Bedtime ({formatTime12(bedtime)})</span>
-                <span>Restless spike (36 BrPM)</span>
-                <span>Wake Time ({formatTime12(wakeTime)})</span>
+              <div className="mt-6 flex items-center justify-between border-t border-white/5 pt-4 text-xs text-ink-faint">
+                <span>AI Briefing by Gemini 3.5</span>
+                <span>Powered by Tiger Data vitals</span>
               </div>
-            </div>
+            </section>
 
-            {/* Heart Rate Trend Card */}
-            <div className="rounded-3xl bg-white/5 p-6 ring-1 ring-white/10 sm:p-8">
-              <div className="flex items-baseline justify-between">
-                <div>
-                  <h3 className="font-display text-xl text-ink [font-variation-settings:'SOFT'_100]">
-                    Heart Rate (BPM)
-                  </h3>
-                  <p className="mt-1 text-xs text-ink-dim">Normal infant resting range: 100–130 BPM</p>
-                </div>
-                <span className="font-display text-2xl text-rose-300 tabular-nums">
-                  {trend.length > 0 ? trend[trend.length - 1].heart_rate : 109}
-                </span>
-              </div>
-
-              {/* SVG Trend Sparkline Chart */}
-              <div className="mt-6 h-36 w-full">
-                <svg className="h-full w-full overflow-visible" viewBox="0 0 300 100" preserveAspectRatio="none">
-                  <rect x="0" y="25" width="300" height="50" fill="currentColor" className="text-rose-400/10" />
-                  <line x1="0" y1="50" x2="300" y2="50" stroke="currentColor" strokeDasharray="4 4" className="text-rose-400/20" />
-                  {trend.length > 1 && (
-                    <polyline
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="text-rose-300"
-                      points={trend
-                        .map((pt, i) => {
-                          const x = (i / (trend.length - 1)) * 300;
-                          const clamped = Math.max(90, Math.min(150, pt.heart_rate || 109));
-                          const y = 90 - ((clamped - 90) / 60) * 80;
-                          return `${x},${y}`;
-                        })
-                        .join(" ")}
-                    />
-                  )}
-                </svg>
-              </div>
-              <div className="mt-2 flex justify-between text-xs text-ink-faint">
-                <span>Bedtime ({formatTime12(bedtime)})</span>
-                <span>Restless spike (134 BPM)</span>
-                <span>Wake Time ({formatTime12(wakeTime)})</span>
-              </div>
-            </div>
-          </section>
-
-          {/* Gemini AI Morning Briefing */}
-          <section className="mt-12 rounded-3xl bg-white/5 p-6 ring-1 ring-white/10 sm:p-8">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="font-display text-2xl text-ink [font-variation-settings:'SOFT'_100]">
-                Gemini Nightly Synthesis
-              </h2>
-              <span className="text-xs text-ink-faint">Gemini 3.5 Flash Lite Briefing · {formatTime12(bedtime)} to {formatTime12(wakeTime)}</span>
-            </div>
-            <ul className="mt-6 flex flex-col gap-4">
-              {summary?.summary_bullets.map((bullet, idx) => (
-                <li
-                  key={idx}
-                  className="font-display text-lg leading-relaxed text-ink [font-variation-settings:'SOFT'_100] sm:text-xl"
-                >
-                  {bullet}
-                </li>
-              )) || (
-                <>
-                  <li className="font-display text-lg text-ink [font-variation-settings:'SOFT'_100]">
-                    🌙 {title} slept 11.0 hours uninterrupted with 100% sleep efficiency during the scheduled bedtime.
-                  </li>
-                  <li className="font-display text-lg text-ink [font-variation-settings:'SOFT'_100]">
-                    🕊️ Auto-soothe intervened twice during restlessness, gently settling them back to sleep within 40 seconds.
-                  </li>
-                  <li className="font-display text-lg text-ink [font-variation-settings:'SOFT'_100]">
-                    ✨ Vital signals remained stable with average breathing rate at 24.3 BrPM.
-                  </li>
-                </>
-              )}
-            </ul>
-          </section>
-
-          <GeminiNightQA bedtime={bedtime} wakeTime={wakeTime} />
+            {/* Gemini Q&A Chat */}
+            <GeminiNightQA
+              bedtime={bedtime}
+              wakeTime={wakeTime}
+              className="flex flex-col justify-between rounded-3xl bg-white/5 p-6 ring-1 ring-white/10 sm:p-8"
+            />
+          </div>
         </>
       )}
+
+      {/* Edit Baby Profile & Schedule Modal */}
+      <EditBabyProfileModal
+        isOpen={editModalOpen}
+        onClose={() => setEditModalOpen(false)}
+        onSaved={(newB, newW) => {
+          setBedtime(newB);
+          setWakeTime(newW);
+          loadDashboardData(newB, newW, true);
+        }}
+      />
 
       <Disclaimer />
     </div>
