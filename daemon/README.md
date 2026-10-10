@@ -79,6 +79,7 @@ The daemon is configured via environment variables or a `.env` file (parsed usin
 | `CRADLEECHO_SOURCE` | `mock` | Vitals source: `mock` (realistic random walk) or `presage` (subadapter reading NDJSON stdout). |
 | `CRADLEECHO_PRESAGE_CMD` | `python presage_bridge/fake_bridge.py` | Command to launch the Presage bridge binary/script. The docker image sets `/opt/bridge/bridge --stdin 640x480`. |
 | `CRADLEECHO_PRESAGE_FPS` | `30` | Maximum rate frames are handed to the Presage bridge (a throttle). Set high (e.g. `1000`) to disable it when the camera is a network stream. |
+| `CRADLEECHO_CAMERA_RECONNECT_S` | `3` | No camera frames for this long (stream ended, Pi restarted, camera unplugged): close and reopen the camera. Also the retry interval while it can't be opened. |
 | `CRADLEECHO_PRESAGE_PACE_FPS` | `0` | When > 0, write frames to the bridge on a steady clock at this rate, repeating the last frame if input stalls. Use `30` when the camera is a network stream (see `docs/presage-compute.md`). |
 | `CRADLEECHO_HOST` | `0.0.0.0` | Host to bind the Uvicorn server to. |
 | `CRADLEECHO_PORT` | `8000` | Port to bind the server to. |
