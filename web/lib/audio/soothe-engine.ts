@@ -18,6 +18,7 @@ export interface SootheEngineOptions {
   cooldownMs?: number; // default 10 * 60 * 1000
   musicVolume?: number; // default 0.6
   previewMs?: number; // default 6000
+  previewFadeMs?: number; // default 2500
   onEvent?: (event: SootheEvent) => void;
 }
 
@@ -57,6 +58,7 @@ export class SootheEngine {
       cooldownMs: 10 * 60 * 1000,
       musicVolume: 0.6,
       previewMs: 6000,
+      previewFadeMs: 2500,
       onEvent: () => {},
       ...options,
     };
@@ -136,25 +138,40 @@ export class SootheEngine {
 
   /** Plays a few seconds of the music (from a click, so it also unlocks audio for later). */
   preview() {
-    if (typeof window === "undefined" || this.status !== "idle") return;
+    if (typeof window === "undefined" || this.status !== "idle" || this.previewing) return;
     this.ensureElement();
     if (!this.music) return;
+    this.clearFade(); // a test fading out from a moment ago
     this.level = 1;
     this.applyVolume();
     this.music.currentTime = 0;
     this.music.play().catch(() => {});
     this.previewing = true;
     this.emit();
-    this.previewTimer = setTimeout(() => this.endPreview(), this.opts.previewMs);
+    this.previewTimer = setTimeout(() => this.endPreview(this.opts.previewFadeMs), this.opts.previewMs);
   }
 
-  endPreview() {
+  /** Ends the test sound, fading out over `fadeMs` (0 = at once) so it never cuts off mid-note. */
+  endPreview(fadeMs = 1000) {
     if (this.previewTimer) clearTimeout(this.previewTimer);
     this.previewTimer = null;
     if (!this.previewing) return;
     this.previewing = false;
-    if (this.status === "idle") this.halt();
     this.emit();
+    if (this.status !== "idle") return; // real soothing took over the music
+    if (fadeMs <= 0) {
+      this.halt();
+      return;
+    }
+    this.clearFade();
+    const startLevel = this.level;
+    const startedAt = Date.now();
+    this.fadeTimer = setInterval(() => {
+      const t = Math.min(1, (Date.now() - startedAt) / fadeMs);
+      this.level = startLevel * (1 - t) * (1 - t); // ease out: quieter sooner, no audible step
+      this.applyVolume();
+      if (t >= 1) this.halt();
+    }, FADE_TICK_MS);
   }
 
   destroy() {
@@ -185,7 +202,8 @@ export class SootheEngine {
   }
 
   private start() {
-    this.endPreview();
+    this.endPreview(0);
+    this.clearFade(); // a test sound still fading out must not silence the real music
     this.ensureElement();
     this.level = 1;
     this.cooldownUntil = Date.now() + this.opts.cooldownMs;
