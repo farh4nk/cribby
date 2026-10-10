@@ -2,29 +2,21 @@
 
 import { useEffect, useState } from "react";
 import { SootheEngine, SootheSnapshot } from "@/lib/audio/soothe-engine";
-import { synthesize } from "@/lib/audio/elevenlabs";
-import { babyObject, useBabyName } from "@/lib/babyName";
-import { edgeSoothePlayUrl } from "@/lib/config";
 
 interface SootheControlsProps {
   engine: SootheEngine;
   snapshot: SootheSnapshot;
-  voiceId: string;
-  onChangeVoice?: () => void;
 }
 
 const STATUS_LABELS: Record<string, string> = {
-  idle: "Ready. It steps in if restlessness continues.",
+  idle: "Ready. Relaxing music plays if restlessness continues.",
   pending: "Restlessness noticed. Waiting a few seconds…",
-  soothing: "Soothing in your voice",
+  soothing: "Playing relaxing music",
   fading: "Settled. Fading out…",
 };
 
-export function SootheControls({ engine, snapshot, voiceId, onChangeVoice }: SootheControlsProps) {
+export function SootheControls({ engine, snapshot }: SootheControlsProps) {
   const [now, setNow] = useState(() => Date.now());
-  const [customText, setCustomText] = useState("");
-  const [talking, setTalking] = useState(false);
-  const name = useBabyName() ?? "";
 
   const locked = snapshot.cooldownUntil > now;
   const active = snapshot.status === "soothing" || snapshot.status === "fading";
@@ -37,27 +29,6 @@ export function SootheControls({ engine, snapshot, voiceId, onChangeVoice }: Soo
 
   const minsLeft = Math.ceil((snapshot.cooldownUntil - now) / 60000);
   const status = STATUS_LABELS[snapshot.status] ?? STATUS_LABELS.idle;
-
-  const handleTalkToBaby = async () => {
-    if (!customText.trim() || talking) return;
-    setTalking(true);
-    try {
-      const url = await synthesize(voiceId, customText.trim());
-      await engine.playOnce(url);
-      try {
-        fetch(edgeSoothePlayUrl(), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ phrase: customText.trim() }),
-        }).catch(() => {});
-      } catch {}
-      setCustomText("");
-    } catch (e) {
-      console.error("Talk to baby error:", e);
-    } finally {
-      setTalking(false);
-    }
-  };
 
   return (
     <div>
@@ -83,11 +54,6 @@ export function SootheControls({ engine, snapshot, voiceId, onChangeVoice }: Soo
       <p className="mt-3 text-sm text-ink-dim" role="status">
         {snapshot.enabled ? status : "Auto-soothe is off."}
       </p>
-      {snapshot.snippet && active && (
-        <p className="rise mt-2 font-display text-lg italic leading-snug text-ink [font-variation-settings:'SOFT'_100]">
-          “{snapshot.snippet}”
-        </p>
-      )}
 
       {/* Cooldown lockout: stops it repeating if the baby is truly awake */}
       {locked && !active && (
@@ -108,41 +74,15 @@ export function SootheControls({ engine, snapshot, voiceId, onChangeVoice }: Soo
         Mute / stop soothing
       </button>
 
-      <div className="mt-6 border-t border-line pt-5">
-        <label htmlFor="talk" className="text-sm text-ink-dim">
-          Say something to {babyObject(name)}, in your voice
-        </label>
-        <div className="mt-2 flex gap-2">
-          <input
-            id="talk"
-            type="text"
-            value={customText}
-            onChange={(e) => setCustomText(e.target.value)}
-            placeholder="Shh, I’m right here…"
-            className="min-w-0 flex-1 rounded-xl bg-white/5 px-3.5 py-2 text-sm text-ink placeholder:text-ink-faint ring-1 ring-white/10 focus:outline-none focus:ring-tone/50"
-            onKeyDown={(e) => e.key === "Enter" && handleTalkToBaby()}
-          />
-          <button
-            type="button"
-            onClick={handleTalkToBaby}
-            disabled={!customText.trim() || talking}
-            className="rounded-xl bg-ink px-4 py-2 text-sm font-medium text-[#0a0b15] transition hover:opacity-90 disabled:opacity-40"
-          >
-            {talking ? "Speaking…" : "Speak"}
-          </button>
-        </div>
-      </div>
-
-      {onChangeVoice && (
-        <button
-          type="button"
-          onClick={onChangeVoice}
-          className="mt-4 text-sm text-ink-faint underline underline-offset-4 transition hover:text-ink"
-        >
-          Re-record my voice
-        </button>
-      )}
-      <p className="mt-5 text-xs text-ink-faint">Voice by ElevenLabs</p>
+      {/* A click here also lets the browser play the music later, when auto-soothe steps in. */}
+      <button
+        type="button"
+        onClick={() => (snapshot.previewing ? engine.endPreview() : engine.preview())}
+        disabled={active || snapshot.status === "pending"}
+        className="mt-3 w-full rounded-full px-4 py-2.5 text-sm text-ink-dim ring-1 ring-white/10 transition hover:bg-white/5 hover:text-ink disabled:cursor-not-allowed disabled:text-ink-faint"
+      >
+        {snapshot.previewing ? "Stop test" : "Test sound"}
+      </button>
     </div>
   );
 }

@@ -296,7 +296,7 @@ Provide a reassuring, concise 3-bullet morning report for tired parents.
 2. Tone: Warm, reassuring, calming, and empathetic to tired parents. Acknowledge their scheduled bedtime window ({bedtime} - {wake_time}).
 3. Output format: Exactly 3 bullet points starting with a relevant emoji (e.g. 🌙, 🕊️, 💜).
 - Bullet 1: How well {baby_name} slept during their scheduled {bedtime} to {wake_time} window (e.g., logged {metrics['sleep_hours']} hours of sleep with {metrics['sleep_efficiency_percent']}% sleep efficiency).
-- Bullet 2: Auto-soothe intervention recap (e.g., how the cloned parent voice stepped in when restlessness occurred and settled their back to sleep).
+- Bullet 2: Auto-soothe intervention recap (e.g., how relaxing music played when restlessness occurred and helped settle them back to sleep).
 - Bullet 3: Vitals stability reassurance (e.g., breathing remained steady and calm throughout the night at {metrics['avg_brpm']} BrPM).
 
 Output only the 3 bullet points, nothing else.
@@ -321,7 +321,7 @@ Output only the 3 bullet points, nothing else.
         # Graceful fallback if API quota or connection issue
         response_text = (
             f"🌙 {baby_name} slept soundly during their {bedtime} to {wake_time} window, achieving {metrics['sleep_efficiency_percent']}% sleep efficiency ({metrics['sleep_hours']} hrs of sleep).\n"
-            f"🕊️ Auto-soothe gently intervened {metrics['soothe_interventions_count']} times with your voice, guiding restlessness back to sleep in an average of {metrics['avg_soothe_resolve_seconds']} seconds.\n"
+            f"🕊️ Auto-soothe gently intervened {metrics['soothe_interventions_count']} times with relaxing music, guiding restlessness back to sleep in an average of {metrics['avg_soothe_resolve_seconds']} seconds.\n"
             f"💜 Breathing rhythm stayed regular and calm all night, averaging {metrics['avg_brpm']} breaths per minute."
         )
         used_model = "fallback-template"
@@ -359,7 +359,7 @@ def answer_nightly_question(
 
     soothe_summary = []
     for s in metrics.get("soothe_events", []):
-        snippet = s.get("voice_snippet_used", "Calming lullaby")
+        snippet = s.get("voice_snippet_used") or "Relaxing music"
         soothe_summary.append(f"- At {s.get('triggered_at')}: Played '{snippet}', settled successfully.")
     soothe_text = "\n".join(soothe_summary) if soothe_summary else "No interventions needed."
 
