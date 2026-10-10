@@ -11,7 +11,7 @@ Exposes:
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 import datetime
 from backend.db.connection import get_db_connection, is_postgres, test_connection
 from backend.services.gemini_summary import (
@@ -103,6 +103,16 @@ def ask_nightly_qa(query: NightlyQAQuery):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+def downsample_rows(rows: List[Dict[str, Any]], limit: int) -> List[Dict[str, Any]]:
+    """Downsamples a list of time-series dictionaries evenly across the entire duration."""
+    if not rows:
+        return []
+    n = len(rows)
+    if n <= limit:
+        return rows
+    step = (n - 1) / (limit - 1)
+    return [rows[int(round(i * step))] for i in range(limit)]
+
 @app.get("/api/sleep-timeline")
 def get_sleep_timeline(
     limit: int = 120,
@@ -124,20 +134,18 @@ def get_sleep_timeline(
                     SELECT time, state, breathing_rate, heart_rate, motion_index
                     FROM baby_vitals
                     WHERE time >= %s AND time <= %s
-                    ORDER BY time ASC
-                    LIMIT %s;
+                    ORDER BY time ASC;
                     """ if is_postgres(conn) else """
                     SELECT time, state, breathing_rate, heart_rate, motion_index
                     FROM baby_vitals
                     WHERE time >= ? AND time <= ?
-                    ORDER BY time ASC
-                    LIMIT ?;
+                    ORDER BY time ASC;
                     """,
-                    (window_start, window_end, limit)
+                    (window_start, window_end)
                 )
                 rows = cur.fetchall()
                 if rows:
-                    return {"timeline": [dict(r) for r in rows]}
+                    return {"timeline": downsample_rows([dict(r) for r in rows], limit)}
 
             # Fallback if window empty
             cur.execute(
@@ -145,17 +153,16 @@ def get_sleep_timeline(
                 SELECT time, state, breathing_rate, heart_rate, motion_index
                 FROM baby_vitals
                 ORDER BY time DESC
-                LIMIT %s;
+                LIMIT 1000;
                 """ if is_postgres(conn) else """
                 SELECT time, state, breathing_rate, heart_rate, motion_index
                 FROM baby_vitals
                 ORDER BY time DESC
-                LIMIT ?;
-                """,
-                (limit,)
+                LIMIT 1000;
+                """
             )
             rows = cur.fetchall()
-            return {"timeline": [dict(r) for r in reversed(rows)]}
+            return {"timeline": downsample_rows(list(reversed([dict(r) for r in rows])), limit)}
         finally:
             cur.close()
 
@@ -170,7 +177,7 @@ def get_vitals_trend(
         cur = conn.cursor()
         try:
             if bedtime and wake_time:
-                cur.execute("SELECT MAX(time) as max_time FROM baby_vitals;")
+                cur.execute("SELECT MAX(time) as max_time FROM baby_vitals WHERE breathing_rate > 0 OR heart_rate > 0;")
                 time_row = cur.fetchone()
                 latest_time = parse_dt_safe(time_row["max_time"]) if time_row and time_row["max_time"] else datetime.datetime.now(datetime.timezone.utc)
                 window_start, window_end = get_night_window(bedtime, wake_time, as_of=latest_time)
@@ -179,38 +186,37 @@ def get_vitals_trend(
                     """
                     SELECT time, breathing_rate, heart_rate, state
                     FROM baby_vitals
-                    WHERE time >= %s AND time <= %s
-                    ORDER BY time ASC
-                    LIMIT %s;
+                    WHERE time >= %s AND time <= %s AND (breathing_rate > 0 OR heart_rate > 0)
+                    ORDER BY time ASC;
                     """ if is_postgres(conn) else """
                     SELECT time, breathing_rate, heart_rate, state
                     FROM baby_vitals
-                    WHERE time >= ? AND time <= ?
-                    ORDER BY time ASC
-                    LIMIT ?;
+                    WHERE time >= ? AND time <= ? AND (breathing_rate > 0 OR heart_rate > 0)
+                    ORDER BY time ASC;
                     """,
-                    (window_start, window_end, limit)
+                    (window_start, window_end)
                 )
                 rows = cur.fetchall()
                 if rows:
-                    return {"trend": [dict(r) for r in rows]}
+                    return {"trend": downsample_rows([dict(r) for r in rows], limit)}
 
             cur.execute(
                 """
                 SELECT time, breathing_rate, heart_rate, state
                 FROM baby_vitals
+                WHERE breathing_rate > 0 OR heart_rate > 0
                 ORDER BY time DESC
-                LIMIT %s;
+                LIMIT 1000;
                 """ if is_postgres(conn) else """
                 SELECT time, breathing_rate, heart_rate, state
                 FROM baby_vitals
+                WHERE breathing_rate > 0 OR heart_rate > 0
                 ORDER BY time DESC
-                LIMIT ?;
-                """,
-                (limit,)
+                LIMIT 1000;
+                """
             )
             rows = cur.fetchall()
-            trend_data = [dict(r) for r in reversed(rows)]
+            trend_data = downsample_rows(list(reversed([dict(r) for r in rows])), limit)
             return {"trend": trend_data}
         finally:
             cur.close()

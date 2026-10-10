@@ -50,6 +50,9 @@ class TelemetryIngestionWorker:
             bpm = float(vitals.get("bpm", 0.0))
             confidence = float(vitals.get("confidence", 0.0))
             motion = float(payload.get("motion_index", 0.0))
+            # Sensor dropout / no vitals detected during SIGNAL_UNSTABLE: do not record zeros
+            if brpm <= 0 and bpm <= 0 and state == "SIGNAL_UNSTABLE":
+                return None
 
             return (ts, state, brpm, bpm, confidence, motion)
         except Exception as e:
