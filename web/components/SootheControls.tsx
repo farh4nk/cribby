@@ -16,16 +16,21 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 export function SootheControls({ engine, snapshot }: SootheControlsProps) {
-  const [now, setNow] = useState(() => Date.now());
+  // The clock is read only in the browser (never during prerender), and ticks while a cooldown runs.
+  const [now, setNow] = useState(0);
 
-  const locked = snapshot.cooldownUntil > now;
+  const locked = now > 0 && snapshot.cooldownUntil > now;
   const active = snapshot.status === "soothing" || snapshot.status === "fading";
 
   useEffect(() => {
-    if (!locked) return;
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [locked]);
+    const tick = () => setNow(Date.now());
+    const first = setTimeout(tick, 0);
+    const id = snapshot.cooldownUntil > Date.now() ? setInterval(tick, 1000) : undefined;
+    return () => {
+      clearTimeout(first);
+      if (id) clearInterval(id);
+    };
+  }, [snapshot.cooldownUntil]);
 
   const minsLeft = Math.ceil((snapshot.cooldownUntil - now) / 60000);
   const status = STATUS_LABELS[snapshot.status] ?? STATUS_LABELS.idle;
