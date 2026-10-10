@@ -17,7 +17,7 @@ export function Header() {
     <header className="flex flex-wrap items-center justify-between gap-4 py-6">
       <div className="flex items-center gap-5 sm:gap-6">
         <Link href="/" className="flex items-center gap-3 transition hover:opacity-85">
-          <Image src="/icon-192.png" alt="" width={36} height={36} priority className="rounded-xl ring-1 ring-white/10" />
+          <Image src="/logo-mark.png" alt="" width={40} height={40} priority />
           <span className="font-display text-xl tracking-tight text-ink [font-variation-settings:'SOFT'_100]">
             {APP_NAME}
           </span>
