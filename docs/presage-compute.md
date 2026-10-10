@@ -23,7 +23,8 @@ and the rest of the daemon need the remainder, so the Presage SDK sits right at 
      -e CRADLEECHO_CAMERA=http://<pi-tailscale-ip>:8000/video_feed \
      -e CRADLEECHO_SOURCE=presage \
      -e CRADLEECHO_PRESAGE_CMD="/opt/bridge/bridge --stdin 480x360" \
-     -e CRADLEECHO_PRESAGE_FPS=60 -e CRADLEECHO_GATE_CHEST_ROOM=1.0 \
+     -e CRADLEECHO_PRESAGE_FPS=1000 -e CRADLEECHO_PRESAGE_PACE_FPS=30 \
+     -e CRADLEECHO_GATE_CHEST_ROOM=1.0 --restart unless-stopped \
      cradleecho-daemon:latest
    ```
 3. Run the web app on the Mac (`cd web && npm run dev`); it talks to `localhost:8000`.
@@ -38,6 +39,19 @@ Set `NEXT_PUBLIC_EDGE_URL=http://<pi-tailscale-ip>:8000` in `web/.env.local`. Sp
 calls (`/ws/talk`, `/ws/listen`, `/api/audio/capabilities`, `/api/night-vision`, `/api/soothe/*`) then go
 to the Pi; telemetry, source, simulate and the camera switch stay on `NEXT_PUBLIC_DAEMON_URL` (the Mac,
 which owns Presage and its credits). Unset, everything goes to the daemon as before.
+
+## Why PRESAGE_FPS=1000 and PRESAGE_PACE_FPS=30 on the Mac (measured 2026-10-10)
+The Pi's stream reaches the Mac at 30 fps on average but in bursts: a third of frame gaps are under
+17 ms and some exceed 150 ms. The bridge timestamps frames on arrival, so Presage saw a low frame
+rate. Two fixes:
+- `PRESAGE_FPS=1000` turns off the daemon's frame throttle. At 60 it dropped the second frame of
+  every burst, so only ~20 of 30 frames/s reached the bridge.
+- `PRESAGE_PACE_FPS=30` queues a few frames and writes them to the bridge on a steady 30 fps clock,
+  repeating the last frame when the network stalls.
+
+Result over ~2 minutes with a person in frame: 30.0 frames/s to the bridge in every window, zero
+`kFrameRateTooLow` (it fired constantly before), confidence 1.00, breathing 17-22/min, heart rate
+58-97 bpm. About 3-15 of the 30 frames/s are repeats; Presage still reported full confidence.
 
 ## Still open
 - With stable fps Presage now reports `kChestNotVisible`: it wants more of the chest in view
