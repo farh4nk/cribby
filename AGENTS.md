@@ -2,7 +2,7 @@
 
 ## Working pitch
 
-Cribby is a baby monitor that does more than show a live crib feed. It interprets sleep quality in real time, surfacing breathing and heart-rate signals, and can soothe a restless baby in the parent’s own voice before the parent has to get up.
+Cribby is a baby monitor that does more than show a live crib feed. It interprets sleep quality in real time, surfacing breathing and heart-rate signals, and can soothe a restless baby with relaxing music before the parent has to get up.
 
 ## Product vision
 
@@ -10,7 +10,7 @@ Cribby is a baby monitor that does more than show a live crib feed. It interpret
 - Sleep-state intelligence powered by Presage
 - Real-time parent-facing dashboard with sleep status and key vitals
 - Local Python daemon for capture, inference, and WebSocket telemetry
-- Auto-soothe flow driven by voice + ambient audio
+- Auto-soothe flow driven by relaxing music
 
 ## Core features
 
@@ -25,19 +25,17 @@ Cribby is a baby monitor that does more than show a live crib feed. It interpret
   - Timeline of sleep and wake states
   - Total sleep time, longest uninterrupted stretch, and number of wake-ups
   - Breathing-rate trend over time
-- ElevenLabs voice cloning
-  - Parent records a short sample during onboarding
-  - “Talk to baby” button that speaks typed text in the parent’s voice
-  - Pre-generated soothing phrases for instant playback
 - Soothing sounds and music
   - White noise, rain, heartbeat, and lullabies
   - Volume control and sleep-timer support
 - Auto-soothe mode
-  - Restlessness detected via Presage triggers a cloned-voice phrase or soundscape
+  - Restlessness detected via Presage triggers relaxing music (a built-in lullaby)
   - Volume fades out once the baby falls asleep again
   - Parent gets a visible notification when the system intervenes
 
-Auto-soothe is the demo centerpiece because it combines Presage, ElevenLabs, and the audio pipeline into one visible loop.
+Auto-soothe is the demo centerpiece because it combines Presage and the audio pipeline into one visible loop.
+
+*Decision (2026-10-10): ElevenLabs voice cloning was dropped. Auto-soothe plays relaxing music from the device showing the dashboard (the Mac); the Pi has no speaker (Bluetooth audio on a Pi 4 slows its Wi-Fi).*
 
 ## Nice-to-haves
 
@@ -55,7 +53,6 @@ Auto-soothe is the demo centerpiece because it combines Presage, ElevenLabs, and
 | Track | Role in the stack |
 | --- | --- |
 | Presage | Breathing and heart-rate signals drive the sleep state and auto-soothe trigger |
-| ElevenLabs | Cloned parent voice for soothing phrases and “talk to baby” |
 | Health Hack | Helps exhausted parents sleep while still understanding their baby’s state |
 | Tiger Data | Sleep timeline as time-series telemetry for state, breathing rate, and soothe events |
 | Gemini | Morning recap of the night, if time allows |
@@ -73,8 +70,8 @@ Auto-soothe is the demo centerpiece because it combines Presage, ElevenLabs, and
 
 1. Hook: tell the real story of a tired parent hearing “is that a cry or just noise?” at 3 a.m.
 2. Live feed: show the stream with the sleep badge on a phone.
-3. Setup moment: record a 10-second voice sample live.
-4. Auto-soothe: hit “simulate restless.” The badge flips to restless, the cloned voice plays, and the soundscape fades in.
+3. Setup moment: press “Test sound” once (this also lets the browser play music later).
+4. Auto-soothe: hit “simulate restless.” The badge flips to restless and relaxing music fades in.
 5. Settle: the state returns to asleep, audio fades out, and the parent receives a notification.
 6. Dashboard: show the night’s timeline and sleep summary.
 
@@ -121,16 +118,16 @@ Valid states: `ASLEEP | DROWSY | RESTLESS | AWAKE | SIGNAL_UNSTABLE`
 ## Project status (updated 2026-10-10)
 
 The task checkboxes below are the original plan and are not maintained. Current state:
-- Built and merged: web UI, daemon (capture, face gate, classifier, telemetry, camera switch), voice clone + auto-soothe, ingestion worker and Gemini recap code, Pi deployment.
+- Built and merged: web UI, daemon (capture, face gate, classifier, telemetry, camera switch), auto-soothe (relaxing music), ingestion worker and Gemini recap code, Pi deployment.
 - **Presage on a Pi 4 is not reliable**: the bridge gets 20-25 fps (needs 25). Run Presage on a laptop that reads the Pi's stream (29 fps measured). See `docs/presage-compute.md`.
-- Never run end to end on real hardware: database ingestion, the Gemini recap against live data, auto-soothe with a real voice clone on the Pi speaker.
+- Never run end to end on real hardware: database ingestion, the Gemini recap against live data, auto-soothe on the demo machine's speakers.
 - Open PRs: #20 (Presage reliability), #18 (two-way audio, night vision, PWA; conflicts), #19 (LAN HTTPS, stacked on #18).
 
 ### Realistic scope for the deadline (Sunday 12 PM)
 
 Aim for: a nursery camera on the Pi plus a laptop that shows the live feed, sleep state, auto-soothe and the morning recap, with the laptop computing the vitals. Do not aim for "everything runs on one Pi" (a Pi 4 is measurably too slow; a Pi 5 is untested).
 
-- **Tier 1, core demo (high confidence):** live camera stream to the web UI over Tailscale; sleep state from vitals; sleep badge flips on "Trigger Test Restlessness", cloned voice plays and the soundscape fades in; state settles, audio fades out, parent is notified; dashboard timeline; Gemini morning recap. Presage vitals for the live parts, with simulated vitals as the fallback.
+- **Tier 1, core demo (high confidence):** live camera stream to the web UI over Tailscale; sleep state from vitals; sleep badge flips on "Trigger Test Restlessness", relaxing music fades in; state settles, audio fades out, parent is notified; dashboard timeline; Gemini morning recap. Presage vitals for the live parts, with simulated vitals as the fallback.
 - **Tier 2, real vitals that stay smooth (about 60%):** Presage on a Mac reading the Pi's stream (29 fps measured) with framing good enough that Presage stops asking for the chest or "hold still", and breathing and heart rate holding for several minutes. Depends on light, distance and sitting still.
 - **Tier 3, stretch (low):** two-way audio, night vision, PWA (PR #18, untested on hardware, conflicts with `main`); LAN HTTPS (PR #19, overlaps with Tailscale); a single-Pi product.
 
@@ -140,7 +137,7 @@ Schedule (Saturday = Oct 10):
 |---|---|---|
 | Sat early | Merge #20. Run Mac Presage 10 min with the camera pulled back; confirm BPM and breathing hold. | Dev 2 |
 | Sat morning | Tiger Data connection string, run the ingestion worker, confirm rows appear; run the Gemini recap on real data. | Dev 4 |
-| Sat midday | Auto-soothe with the real voice clone and the Pi speaker; UI hookup for the Mac setup. | Dev 2, Dev 3 |
+| Sat midday | Auto-soothe music on the Mac speakers; UI hookup for the Mac setup. | Dev 2, Dev 3 |
 | Sat afternoon | Decide on PR #18 (rebase and hardware-test, or park it) and #19. | Team |
 | Sat evening | One full run (camera, vitals, database, recap, soothe); rehearse the 2-minute demo twice. | Everyone |
 | Sun morning | No new features. Fix only what rehearsal breaks. Prepare the "why a Pi?" answer. | Everyone |
@@ -153,7 +150,7 @@ Rules:
 
 ### Why a Pi? (expected judge question)
 
-The Pi is the nursery unit: always-on camera, speaker for the cloned-voice and lullabies, low power, face-gated privacy, no video recorded. Presage's vitals need more compute than a Pi 4 has (measured: 20-25 of the 25 fps the SDK requires; 29 fps when Presage runs on a Mac), so vitals run on a home hub. A Pi 5 should fit it in one box (untested). Do not claim everything runs on the Pi or that a Pi 5 definitely works.
+The Pi is the nursery unit: always-on camera, low power, face-gated privacy, no video recorded. Presage's vitals need more compute than a Pi 4 has (measured: 20-25 of the 25 fps the SDK requires; 29 fps when Presage runs on a Mac), so vitals run on a home hub. A Pi 5 should fit it in one box (untested). Do not claim everything runs on the Pi or that a Pi 5 definitely works.
 
 ## Team responsibilities
 
@@ -189,19 +186,13 @@ Deliverable: the parent-facing mobile-first monitoring UI.
 - [ ] Task 2.5 — Safety UI: place the required disclaimer in the footer: “Cribby is an informational wellness monitor, not a medical or SIDS-prevention device.”
 - [ ] Task 2.6 — Stage demo controls: add a hidden or prominent “Trigger Test Restlessness” button that hits Dev 1’s mock endpoint.
 
-### Dev 3: Audio pipeline & auto-soothe engine (ElevenLabs + Web Audio)
+### Dev 3: Audio pipeline & auto-soothe engine (Web Audio)
 
-Deliverable: voice-cloning setup and the automated multi-track playback loop.
+Deliverable: the automated relaxing-music loop.
 
-- [ ] Task 3.1 — Instant Voice Clone (IVC) onboarding: build a 10-second browser mic recorder component. On completion, call ElevenLabs:
-  `POST https://api.elevenlabs.io/v1/voices/add` with the audio blob to register the parent’s voice and retrieve `voice_id`.
-- [ ] Task 3.2 — Pre-render soothing audio snippets: send text prompts to `POST /v1/text-to-speech/{voice_id}` to generate three short phrases, spoken in a soft, gentle voice:
-  - “Shhh”
-  - “Go to sleep”
-  - “Good night”
+- [x] Tasks 3.1 and 3.2 (ElevenLabs voice clone and pre-rendered phrases) were dropped on 2026-10-10.
 - [ ] Task 3.3 — Auto-soothe orchestrator: subscribe to the telemetry stream. When `state === "RESTLESS"` for 4 seconds:
-  - trigger an ambient lullaby/heartbeat track using HTML5 Audio
-  - overlay the ElevenLabs snippet at 70% volume
+  - play relaxing music using HTML5 Audio (a built-in lullaby; `NEXT_PUBLIC_SOOTHE_MUSIC_URL` for a real track)
   - when the state returns to `ASLEEP`, smoothly ramp the volume to 0 over 8 seconds
 - [ ] Task 3.4 — Auto-soothe safeguards: implement a 10-minute cooldown lockout so auto-soothe does not repeat endlessly if the baby is truly awake and crying, plus an instant “Mute / Stop Soothe” UI control.
 

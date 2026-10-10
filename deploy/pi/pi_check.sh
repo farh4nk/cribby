@@ -74,8 +74,6 @@ if [[ -f daemon.env ]] && grep -q '^PRESAGE_API_KEY=.\+' daemon.env; then ok "PR
 else warn "PRESAGE_API_KEY missing in daemon.env: the daemon will fall back to MOCK vitals"; fi
 if [[ -f analytics.env ]] && grep -q '^TIGER_DATA_CONNECTION_STRING=.\+' analytics.env; then ok "TIGER_DATA_CONNECTION_STRING set in analytics.env"
 else warn "TIGER_DATA_CONNECTION_STRING missing in analytics.env: analytics will fall back to SQLite"; fi
-if [[ -f web.env ]] && grep -q '^ELEVENLABS_API_KEY=.\+' web.env; then ok "ELEVENLABS_API_KEY set in web.env"
-else warn "ELEVENLABS_API_KEY missing in web.env: voice cloning and talk-to-baby will not work"; fi
 docker image inspect cradleecho-daemon:latest >/dev/null 2>&1 && ok "daemon image loaded" || bad "daemon image not loaded (run build_and_ship.sh from your laptop)"
 docker image inspect cradleecho-analytics:latest >/dev/null 2>&1 && ok "analytics image loaded" || bad "analytics image not loaded (run build_and_ship.sh from your laptop)"
 docker image inspect cradleecho-web:latest >/dev/null 2>&1 && ok "web image loaded" || bad "web image not loaded (run build_and_ship.sh from your laptop)"

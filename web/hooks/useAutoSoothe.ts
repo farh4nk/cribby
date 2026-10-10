@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { SootheEngine, SootheEngineOptions, SootheSnapshot } from "@/lib/audio/soothe-engine";
-import { SoothingSnippet } from "@/lib/audio/elevenlabs";
 
 const noopSubscribe = () => () => {};
 
@@ -12,7 +11,6 @@ const noopSubscribe = () => () => {};
  */
 export function useAutoSoothe(
   state?: string | null,
-  snippets: SoothingSnippet[] = [],
   options: SootheEngineOptions = {}
 ) {
   const [engine] = useState(() => new SootheEngine(options));
@@ -28,7 +26,6 @@ export function useAutoSoothe(
   }, [engine, options.onEvent]);
 
   useEffect(() => () => engine.destroy(), [engine]);
-  useEffect(() => engine.setSnippets(snippets), [engine, snippets]);
   useEffect(() => {
     if (state) engine.onTelemetry({ state });
   }, [engine, state]);

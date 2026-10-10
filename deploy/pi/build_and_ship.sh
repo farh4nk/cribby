@@ -4,7 +4,7 @@
 # is slow and can run out of memory.
 #
 #   deploy/pi/build_and_ship.sh pi@raspberrypi.local              # images + compose file
-#   deploy/pi/build_and_ship.sh pi@raspberrypi.local --with-env   # also copy API keys (Presage, Tiger Data, Gemini, ElevenLabs)
+#   deploy/pi/build_and_ship.sh pi@raspberrypi.local --with-env   # also copy API keys (Presage, Tiger Data, Gemini)
 #   deploy/pi/build_and_ship.sh pi@raspberrypi.local --only daemon   # one image only: daemon | analytics | web
 #
 # On an Apple Silicon Mac the arm64 build is native and fast. On x86 machines run once:
@@ -83,15 +83,9 @@ if [[ $WITH_ENV -eq 1 ]]; then
     ssh "$TARGET" "touch $REMOTE_DIR/analytics.env"
   fi
 
-  # Only the ElevenLabs key goes to the Pi; the rest of web/.env.local is dev-only settings.
-  ENV_FILE=""
-  for f in web/.env.local web/.env; do [[ -f "$f" ]] && ENV_FILE="$f" && break; done
-  EL_LINE=""
-  [[ -n "$ENV_FILE" ]] && EL_LINE=$(grep -E '^ELEVENLABS_API_KEY=.+' "$ENV_FILE" | grep -v 'your_' | head -1 || true)
-  printf '%s\n' "$EL_LINE" | ssh "$TARGET" "cat > $REMOTE_DIR/web.env"
-  ssh "$TARGET" "chmod 600 $REMOTE_DIR/daemon.env $REMOTE_DIR/analytics.env $REMOTE_DIR/web.env"
+  # The web app needs no secrets on the Pi.
+  ssh "$TARGET" "touch $REMOTE_DIR/web.env && chmod 600 $REMOTE_DIR/daemon.env $REMOTE_DIR/analytics.env $REMOTE_DIR/web.env"
   echo "Copied daemon/.env -> daemon.env"
-  [[ -n "$EL_LINE" ]] && echo "Copied ELEVENLABS_API_KEY -> web.env" || echo "NOTE: no ELEVENLABS_API_KEY in web/.env.local; voice features will not work on the Pi."
 else
   ssh "$TARGET" "cd $REMOTE_DIR && touch daemon.env analytics.env web.env"
   echo "NOTE: daemon.env, analytics.env, and web.env on the Pi are empty. Add API keys or re-run with --with-env."
