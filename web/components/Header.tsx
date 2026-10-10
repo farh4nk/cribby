@@ -6,6 +6,7 @@ import { BabyNameButton } from "@/components/BabyNameButton";
 import { UserMenu } from "@/components/UserMenu";
 import { SystemStatusMenu } from "@/components/SystemStatusMenu";
 import { useAuth } from "@/context/AuthProvider";
+import Image from "next/image";
 import { APP_NAME } from "@/lib/config";
 
 export function Header() {
@@ -16,13 +17,7 @@ export function Header() {
     <header className="flex flex-wrap items-center justify-between gap-4 py-6">
       <div className="flex items-center gap-5 sm:gap-6">
         <Link href="/" className="flex items-center gap-3 transition hover:opacity-85">
-          {/* Crescent moon, tinted by current state */}
-          <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden className="text-tone transition-colors duration-1000">
-            <path
-              fill="currentColor"
-              d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5a.6.6 0 0 0-.8-.7A10 10 0 1 0 21.2 15a.6.6 0 0 0-.7-.8Z"
-            />
-          </svg>
+          <Image src="/icon-192.png" alt="" width={36} height={36} priority className="rounded-xl ring-1 ring-white/10" />
           <span className="font-display text-xl tracking-tight text-ink [font-variation-settings:'SOFT'_100]">
             {APP_NAME}
           </span>
