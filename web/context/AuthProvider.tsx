@@ -9,6 +9,7 @@ interface AuthContextType {
   user: AuthUser | null;
   baby: BabyProfile | null;
   isLoading: boolean;
+  needsOnboarding: boolean;
   login: () => void;
   logout: () => Promise<void>;
   updateBaby: (updates: {
@@ -17,6 +18,11 @@ interface AuthContextType {
     wake_time?: string;
     voice_id?: string | null;
   }) => Promise<BabyProfile | null>;
+  completeOnboarding: (data: {
+    babyName: string;
+    bedtime: string;
+    wakeTime: string;
+  }) => Promise<boolean>;
   refreshSession: () => Promise<void>;
 }
 
@@ -24,9 +30,11 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   baby: null,
   isLoading: true,
+  needsOnboarding: false,
   login: () => {},
   logout: async () => {},
   updateBaby: async () => null,
+  completeOnboarding: async () => false,
   refreshSession: async () => {},
 });
 
@@ -35,6 +43,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [baby, setBaby] = useState<BabyProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
 
   const refreshSession = useCallback(async () => {
     try {
@@ -44,19 +53,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (data.authenticated && data.user) {
           setUser(data.user);
           setBaby(data.baby);
-          if (data.baby?.name) {
-            // Synchronize with existing client-side babyName store
-            setBabyName(data.baby.name);
+          const needs = Boolean(
+            data.needs_onboarding ?? (!data.baby?.name || !data.baby.name.trim())
+          );
+          setNeedsOnboarding(needs);
+          if (data.baby?.name && data.baby.name.trim()) {
+            // Automatically pull and apply the data associated with their baby
+            setBabyName(data.baby.name.trim());
           }
           return;
         }
       }
       setUser(null);
       setBaby(null);
+      setNeedsOnboarding(false);
     } catch (err) {
       console.error("[AuthProvider] Failed to fetch session:", err);
       setUser(null);
       setBaby(null);
+      setNeedsOnboarding(false);
     } finally {
       setIsLoading(false);
     }
@@ -87,10 +102,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setUser(null);
       setBaby(null);
+      setNeedsOnboarding(false);
       router.push("/");
       router.refresh();
     }
   }, [router]);
+
+  const completeOnboarding = useCallback(
+    async (data: {
+      babyName: string;
+      bedtime: string;
+      wakeTime: string;
+    }): Promise<boolean> => {
+      try {
+        const res = await fetch("/api/auth/onboarding", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            baby_name: data.babyName,
+            bedtime: data.bedtime,
+            wake_time: data.wakeTime,
+          }),
+        });
+
+        if (res.ok) {
+          const result = await res.json();
+          setUser(result.user);
+          setBaby(result.baby);
+          setNeedsOnboarding(false);
+          if (result.baby?.name) {
+            setBabyName(result.baby.name);
+          }
+          return true;
+        }
+      } catch (err) {
+        console.error("[AuthProvider] completeOnboarding error:", err);
+      }
+      return false;
+    },
+    []
+  );
 
   const updateBaby = useCallback(
     async (updates: {
@@ -136,9 +187,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         baby,
         isLoading,
+        needsOnboarding,
         login,
         logout,
         updateBaby,
+        completeOnboarding,
         refreshSession,
       }}
     >

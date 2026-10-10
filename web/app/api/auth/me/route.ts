@@ -31,15 +31,21 @@ export async function GET() {
       cache: "no-store",
     });
     if (res.ok) {
-      baby = await res.json();
+      const data = await res.json();
+      baby = data.baby || data;
     }
   } catch {
     // Backend temporarily unreachable, fall back to JWT cached profile
   }
 
+  const needsOnboarding = Boolean(
+    session.needs_onboarding ?? (!baby?.name || baby.name.trim() === "")
+  );
+
   return NextResponse.json({
     authenticated: true,
     user: session.user,
     baby,
+    needs_onboarding: needsOnboarding,
   });
 }
