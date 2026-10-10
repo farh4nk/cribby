@@ -104,6 +104,8 @@ class EdgeAudioPlayer:
 
             cmd = [self._player_bin]
             if "aplay" in self._player_bin:
+                if os.environ.get("PULSE_SERVER"):
+                    cmd.extend(["-D", "pulse"])  # Docker on a Mac: play through the host's PulseAudio
                 cmd.extend(["-q", tmp_path])
             elif "afplay" in self._player_bin:
                 cmd.append(tmp_path)
