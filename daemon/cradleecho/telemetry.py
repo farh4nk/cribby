@@ -79,6 +79,8 @@ def format_telemetry_payload(
         },
         "motion_index": round(float(motion_index), 2),
         "camera": camera_info,
+        # True while the Simulated source drives the readings: consumers must not record them.
+        "simulated": isinstance(source, MockVitalsSource),
     }
 
 

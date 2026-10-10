@@ -39,6 +39,9 @@ class TelemetryIngestionWorker:
             # The camera was switched off: there is nothing to record (would read as signal loss).
             if (payload.get("camera") or {}).get("enabled") is False:
                 return None
+            # Simulated mode (the daemon's mock source): demo numbers, not a measurement.
+            if payload.get("simulated") is True:
+                return None
             # Contract: timestamp, state, vitals: {brpm, bpm, confidence}, motion_index
             ts = payload.get("timestamp") or datetime.datetime.now(datetime.timezone.utc).isoformat()
             state = payload.get("state", "SIGNAL_UNSTABLE")

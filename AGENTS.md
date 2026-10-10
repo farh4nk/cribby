@@ -105,6 +105,8 @@ All four developers should build against this standard WebSocket telemetry paylo
 
 Valid states: `ASLEEP | DROWSY | RESTLESS | AWAKE | SIGNAL_UNSTABLE`
 
+*Note: `simulated` (bool, additive) is `true` while the daemon's Simulated source drives the readings; the ingestion worker never records those. Simulated mode replays a short fixed sample in a loop.*
+
 *Note: The `camera` object is additive/backward compatible, and `state` valid values remain unchanged.*
 **Camera fields:**
 - `live` (bool): `true` when capturing real frames, `false` if synthetic fallback

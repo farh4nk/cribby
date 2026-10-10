@@ -21,7 +21,7 @@ def test_contract_format_telemetry_payload():
         motion_index=0.1
     )
     
-    assert set(payload.keys()) == {"timestamp", "state", "vitals", "motion_index", "camera"}
+    assert set(payload.keys()) == {"timestamp", "state", "vitals", "motion_index", "camera", "simulated"}
     assert set(payload["vitals"].keys()) == {"brpm", "bpm", "confidence"}
     assert set(payload["camera"].keys()) == {"enabled", "live", "gate", "framing", "sdk_code", "sdk_hint", "night_vision", "enhancing"}
     
@@ -45,7 +45,7 @@ def test_contract_api_state_mock():
         assert response.status_code == 200
         payload = response.json()
         
-        assert set(payload.keys()) == {"timestamp", "state", "vitals", "motion_index", "camera"}
+        assert set(payload.keys()) == {"timestamp", "state", "vitals", "motion_index", "camera", "simulated"}
         assert set(payload["vitals"].keys()) == {"brpm", "bpm", "confidence"}
         assert set(payload["camera"].keys()) == {"enabled", "live", "gate", "framing", "sdk_code", "sdk_hint", "night_vision", "enhancing"}
         assert re.match(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$", payload["timestamp"])
@@ -82,7 +82,7 @@ def test_contract_api_state_stale_presage():
         assert response.status_code == 200
         payload = response.json()
         
-        assert set(payload.keys()) == {"timestamp", "state", "vitals", "motion_index", "camera"}
+        assert set(payload.keys()) == {"timestamp", "state", "vitals", "motion_index", "camera", "simulated"}
         assert set(payload["vitals"].keys()) == {"brpm", "bpm", "confidence"}
         assert set(payload["camera"].keys()) == {"enabled", "live", "gate", "framing", "sdk_code", "sdk_hint", "night_vision", "enhancing"}
         assert re.match(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$", payload["timestamp"])
@@ -148,3 +148,19 @@ def test_contract_camera_fields():
         payload = format_telemetry_payload("ASLEEP", Reading(0.0, 0.0, 0.0, 0.0), 0.0, camera=cam, source=src)
         assert payload["camera"]["framing"] == expected
 
+
+
+def test_simulated_flag_marks_mock_readings():
+    reading = Reading(brpm=26.0, bpm=120.0, confidence=0.9, motion_index=0.04)
+    assert format_telemetry_payload("ASLEEP", reading, 0.04, source=MockVitalsSource())["simulated"] is True
+    assert format_telemetry_payload("ASLEEP", reading, 0.04, source=None)["simulated"] is False
+
+
+def test_mock_source_cycles_a_fixed_sample():
+    from cradleecho.sources.mock import CALM_SAMPLE
+
+    src = MockVitalsSource()
+    first = [src.read() for _ in range(len(CALM_SAMPLE))]
+    again = [src.read() for _ in range(len(CALM_SAMPLE))]
+    assert [(r.brpm, r.bpm) for r in first] == [(r.brpm, r.bpm) for r in again]
+    assert all(22.0 <= r.brpm <= 40.0 for r in first)  # inside the sleeping range

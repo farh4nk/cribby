@@ -43,6 +43,7 @@ export interface Telemetry {
   vitals: Vitals;
   motion_index: number;
   camera?: CameraStatus; // additive; older daemons omit it
+  simulated?: boolean; // additive: true while the Simulated source drives the readings (never recorded)
 }
 
 export const SLEEP_STATES: readonly SleepState[] = [
