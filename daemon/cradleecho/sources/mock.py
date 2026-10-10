@@ -1,22 +1,43 @@
-"""Mock vitals source generating realistic random walks."""
+"""Mock vitals source: replays a short fixed sample of infant readings in a loop."""
 
-import random
 import time
 from typing import Optional
 
 from cradleecho.sources.base import Reading
 
+# (brpm, bpm, confidence, motion_index). Read at 2 Hz, so each loop lasts a few seconds. Calm values
+# sit inside the sleeping range (22-40 breaths/min, low motion), so the classifier settles on ASLEEP.
+CALM_SAMPLE: tuple[tuple[float, float, float, float], ...] = (
+    (25.8, 119.0, 0.91, 0.04),
+    (26.1, 120.0, 0.90, 0.03),
+    (26.4, 121.0, 0.92, 0.04),
+    (26.0, 120.0, 0.91, 0.05),
+    (25.6, 118.0, 0.90, 0.04),
+    (25.9, 119.0, 0.91, 0.03),
+    (26.3, 121.0, 0.92, 0.04),
+    (26.6, 122.0, 0.91, 0.05),
+    (26.2, 120.0, 0.90, 0.04),
+    (25.7, 119.0, 0.91, 0.03),
+    (25.5, 118.0, 0.92, 0.04),
+    (25.9, 119.0, 0.91, 0.04),
+)
+RESTLESS_SAMPLE: tuple[tuple[float, float, float, float], ...] = (
+    (34.2, 138.0, 0.88, 0.30),
+    (35.1, 141.0, 0.87, 0.33),
+    (35.8, 144.0, 0.88, 0.34),
+    (35.0, 142.0, 0.89, 0.31),
+    (34.4, 139.0, 0.88, 0.29),
+    (35.5, 143.0, 0.87, 0.32),
+)
+
 
 class MockVitalsSource:
-    """Simulates realistic infant vitals with mean-reverting random walk."""
+    """Simulated infant vitals: the same small sample, cycled, so every demo looks the same."""
 
     def __init__(self, seed: Optional[int] = None) -> None:
-        self._rng = random.Random(seed)
+        # `seed` is accepted for compatibility; the sample is fixed, so there is nothing to seed.
         self._mode: Optional[str] = None
-        self._brpm: float = 26.0
-        self._bpm: float = 120.0
-        self._confidence: float = 0.90
-        self._motion_index: float = 0.04
+        self._index = 0
         self._running: bool = False
 
     async def start(self) -> None:
@@ -27,48 +48,10 @@ class MockVitalsSource:
 
     def set_forced_mode(self, mode: Optional[str]) -> None:
         """Set simulation mode: 'RESTLESS' or None (normal)."""
-        if mode:
-            self._mode = mode.upper()
-        else:
-            self._mode = None
+        self._mode = mode.upper() if mode else None
 
     def read(self) -> Reading:
-        now = time.time()
-        if self._mode == "RESTLESS":
-            # Spiked vitals for restless simulation
-            target_brpm = 35.0
-            target_bpm = 140.0
-            target_conf = 0.88
-            target_motion = 0.32
-        else:
-            # Normal infant vitals (asleep / calm)
-            target_brpm = 26.0
-            target_bpm = 120.0
-            target_conf = 0.90
-            target_motion = 0.04
-
-        # Mean-reverting random walk step
-        self._brpm += 0.25 * (target_brpm - self._brpm) + self._rng.uniform(-0.4, 0.4)
-        self._bpm += 0.25 * (target_bpm - self._bpm) + self._rng.uniform(-0.8, 0.8)
-        self._confidence += 0.20 * (target_conf - self._confidence) + self._rng.uniform(-0.02, 0.02)
-        self._motion_index += 0.25 * (target_motion - self._motion_index) + self._rng.uniform(-0.03, 0.03)
-
-        # Clamping
-        if self._mode == "RESTLESS":
-            self._brpm = max(31.0, min(39.0, self._brpm))
-            self._bpm = max(130.0, min(155.0, self._bpm))
-            self._motion_index = max(0.24, min(0.40, self._motion_index))
-        else:
-            self._brpm = max(23.0, min(32.0, self._brpm))
-            self._bpm = max(112.0, min(128.0, self._bpm))
-            self._motion_index = max(0.01, min(0.08, self._motion_index))
-
-        self._confidence = max(0.50, min(0.99, self._confidence))
-
-        return Reading(
-            brpm=self._brpm,
-            bpm=self._bpm,
-            confidence=self._confidence,
-            motion_index=self._motion_index,
-            timestamp=now,
-        )
+        sample = RESTLESS_SAMPLE if self._mode == "RESTLESS" else CALM_SAMPLE
+        brpm, bpm, confidence, motion = sample[self._index % len(sample)]
+        self._index += 1
+        return Reading(brpm=brpm, bpm=bpm, confidence=confidence, motion_index=motion, timestamp=time.time())
