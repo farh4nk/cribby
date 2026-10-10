@@ -359,14 +359,10 @@ export function TwoWayAudio({ sootheEngine }: { sootheEngine: SootheEngine | nul
         </div>
 
         <div className="flex items-center gap-2">
-          {isBusyOrActive ? (
+          {isBusyOrActive && (
             <span className="flex items-center gap-1.5 rounded-full bg-tone/20 px-2.5 py-0.5 text-xs font-medium text-tone ring-1 ring-tone/30">
               <span className="h-1.5 w-1.5 rounded-full bg-tone breathe" />
               {talkState === "talking" ? "Live Voice" : "Listening"}
-            </span>
-          ) : (
-            <span className="text-xs text-ink-dim">
-              {isOpen ? "Hide" : "Open"}
             </span>
           )}
           <svg

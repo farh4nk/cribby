@@ -8,13 +8,6 @@ interface SootheControlsProps {
   snapshot: SootheSnapshot;
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  idle: "Ready. Relaxing music plays if restlessness continues.",
-  pending: "Restlessness noticed. Waiting a few seconds…",
-  soothing: "Playing relaxing music",
-  fading: "Settled. Fading out…",
-};
-
 export function SootheControls({ engine, snapshot }: SootheControlsProps) {
   // The clock is read only in the browser (never during prerender), and ticks while a cooldown runs.
   const [now, setNow] = useState(0);
@@ -33,7 +26,6 @@ export function SootheControls({ engine, snapshot }: SootheControlsProps) {
   }, [snapshot.cooldownUntil]);
 
   const minsLeft = Math.ceil((snapshot.cooldownUntil - now) / 60000);
-  const status = STATUS_LABELS[snapshot.status] ?? STATUS_LABELS.idle;
 
   return (
     <div>
@@ -56,8 +48,9 @@ export function SootheControls({ engine, snapshot }: SootheControlsProps) {
         </button>
       </div>
 
-      <p className="mt-3 text-sm text-ink-dim" role="status">
-        {snapshot.enabled ? status : "Auto-soothe is off."}
+      {/* What the switch does, shown whether it is on or off. The status lives in the card header pill. */}
+      <p className="mt-3 text-sm text-ink-dim">
+        Plays relaxing music if restlessness continues, then fades it out once your baby settles.
       </p>
 
       {/* Cooldown lockout: stops it repeating if the baby is truly awake */}
