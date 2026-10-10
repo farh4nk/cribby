@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
-import { Fraunces, Instrument_Sans } from "next/font/google";
+import localFont from "next/font/local";
+import { Instrument_Sans } from "next/font/google";
 import { AuthProvider } from "@/context/AuthProvider";
 import { NightShell } from "@/components/NightShell";
 import { OnboardingModal } from "@/components/OnboardingModal";
@@ -8,11 +9,11 @@ import { PwaRegister } from "@/components/PwaRegister";
 import { APP_NAME } from "@/lib/config";
 import "./globals.css";
 
-// Display serif with the SOFT axis turned up: warm and rounded, like a nursery sign.
-const fraunces = Fraunces({
-  variable: "--font-fraunces",
-  subsets: ["latin"],
-  axes: ["SOFT", "opsz"],
+// Playful, child-themed display font for headlines, hero states, and badges
+const milkyway = localFont({
+  src: "./fonts/Milkyway-DEMO.ttf",
+  variable: "--font-milkyway",
+  display: "swap",
 });
 
 const instrument = Instrument_Sans({
@@ -40,7 +41,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${fraunces.variable} ${instrument.variable} h-full`}>
+    <html lang="en" className={`${milkyway.variable} ${instrument.variable} h-full`}>
       <head>
         <link rel="preload" as="script" href="/sw.js" />
       </head>
