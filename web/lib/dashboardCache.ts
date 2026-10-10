@@ -24,6 +24,7 @@ export interface TimelineEntry {
   breathing_rate: number;
   heart_rate: number;
   motion_index: number;
+  is_real?: boolean;
 }
 
 export interface TrendEntry {
@@ -31,6 +32,7 @@ export interface TrendEntry {
   breathing_rate: number;
   heart_rate: number;
   state: string;
+  is_real?: boolean;
 }
 
 export interface DashboardCacheData {

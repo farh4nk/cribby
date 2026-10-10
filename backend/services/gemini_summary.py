@@ -7,12 +7,16 @@ and prompts Gemini to produce a concise, reassuring 3-bullet morning report for 
 
 import os
 import datetime
+from zoneinfo import ZoneInfo
 from typing import Dict, Any, List, Optional, Tuple
 from google import genai
 from dotenv import load_dotenv
 from backend.db.connection import get_db_connection, is_postgres
 
 load_dotenv()
+
+# Bedtime and wake time are the parent's local clock; the database stores UTC.
+LOCAL_TZ = ZoneInfo(os.getenv("CRIBBY_TZ", "America/New_York"))
 
 # Prioritized list of Gemini models to support fast response and high availability
 GEMINI_MODELS = [
@@ -51,8 +55,10 @@ def get_night_window(
     """
     Computes (window_start, window_end) for the most recent night between parent-set bedtime and wake time.
     Handles the overnight midnight rollover (e.g., 20:00 to 07:00).
+    Times are read in LOCAL_TZ (CRIBBY_TZ, default America/New_York); the window is returned in UTC.
     """
     as_of_dt = parse_dt_safe(as_of) if as_of is not None else datetime.datetime.now(datetime.timezone.utc)
+    as_of_dt = as_of_dt.astimezone(LOCAL_TZ)
 
     b_hour, b_min = parse_time_str(bedtime_str)
     w_hour, w_min = parse_time_str(wake_str)
@@ -69,22 +75,30 @@ def get_night_window(
         end_date = as_of_dt.date()
         start_date = end_date - datetime.timedelta(days=1)
 
-    window_start = datetime.datetime.combine(start_date, datetime.time(b_hour, b_min), tzinfo=as_of_dt.tzinfo)
-    window_end = datetime.datetime.combine(end_date, datetime.time(w_hour, w_min), tzinfo=as_of_dt.tzinfo)
+    window_start = datetime.datetime.combine(start_date, datetime.time(b_hour, b_min), tzinfo=LOCAL_TZ)
+    window_end = datetime.datetime.combine(end_date, datetime.time(w_hour, w_min), tzinfo=LOCAL_TZ)
 
-    return window_start, window_end
+    utc = datetime.timezone.utc
+    return window_start.astimezone(utc), window_end.astimezone(utc)
 
 def fetch_nightly_metrics(
     bedtime: str = "20:00",
     wake_time: str = "07:00",
-    hours: Optional[int] = None
+    hours: Optional[int] = None,
+    is_real: Optional[bool] = None
 ) -> Dict[str, Any]:
     """Queries Tiger Data for vitals and soothe events scoped to the parent's scheduled bedtime window."""
     with get_db_connection() as conn:
         cur = conn.cursor()
         try:
+            real_clause = ""
+            params_real = []
+            if is_real is not None:
+                real_clause = " AND is_real = %s" if is_postgres() else " AND is_real = ?"
+                params_real = [is_real]
+
             # Determine latest recorded data in database to anchor timeline
-            cur.execute("SELECT MIN(time) as min_time, MAX(time) as max_time FROM baby_vitals;")
+            cur.execute(f"SELECT MIN(time) as min_time, MAX(time) as max_time FROM baby_vitals WHERE 1=1{real_clause};", params_real if real_clause else None)
             time_row = cur.fetchone()
             latest_time = parse_dt_safe(time_row["max_time"]) if time_row and time_row["max_time"] else datetime.datetime.now(datetime.timezone.utc)
 
@@ -96,81 +110,49 @@ def fetch_nightly_metrics(
 
             # 1. Fetch vitals summary scoped to the bedtime window
             cur.execute(
-                """
+                f"""
                 SELECT 
                     COUNT(*) as total_samples,
                     COUNT(CASE WHEN state = 'ASLEEP' THEN 1 END) as asleep_samples,
                     COUNT(CASE WHEN state = 'RESTLESS' THEN 1 END) as restless_samples,
                     COUNT(CASE WHEN state = 'AWAKE' THEN 1 END) as awake_samples,
-                    AVG(breathing_rate) as avg_brpm,
-                    MIN(breathing_rate) as min_brpm,
-                    MAX(breathing_rate) as max_brpm,
-                    AVG(heart_rate) as avg_bpm,
-                    MIN(heart_rate) as min_bpm,
-                    MAX(heart_rate) as max_bpm,
+                    AVG(CASE WHEN breathing_rate > 0 THEN breathing_rate END) as avg_brpm,
+                    MIN(CASE WHEN breathing_rate > 0 THEN breathing_rate END) as min_brpm,
+                    MAX(CASE WHEN breathing_rate > 0 THEN breathing_rate END) as max_brpm,
+                    AVG(CASE WHEN heart_rate > 0 THEN heart_rate END) as avg_bpm,
+                    MIN(CASE WHEN heart_rate > 0 THEN heart_rate END) as min_bpm,
+                    MAX(CASE WHEN heart_rate > 0 THEN heart_rate END) as max_bpm,
                     MIN(time) as session_start,
                     MAX(time) as session_end
                 FROM baby_vitals
-                WHERE time >= %s AND time <= %s;
-                """ if is_postgres() else """
-                SELECT 
-                    COUNT(*) as total_samples,
-                    COUNT(CASE WHEN state = 'ASLEEP' THEN 1 END) as asleep_samples,
-                    COUNT(CASE WHEN state = 'RESTLESS' THEN 1 END) as restless_samples,
-                    COUNT(CASE WHEN state = 'AWAKE' THEN 1 END) as awake_samples,
-                    AVG(breathing_rate) as avg_brpm,
-                    MIN(breathing_rate) as min_brpm,
-                    MAX(breathing_rate) as max_brpm,
-                    AVG(heart_rate) as avg_bpm,
-                    MIN(heart_rate) as min_bpm,
-                    MAX(heart_rate) as max_bpm,
-                    MIN(time) as session_start,
-                    MAX(time) as session_end
-                FROM baby_vitals
-                WHERE time >= ? AND time <= ?;
+                WHERE time >= {"%s" if is_postgres() else "?"} AND time <= {"%s" if is_postgres() else "?"}{real_clause};
                 """,
-                (window_start, window_end)
+                [window_start, window_end] + params_real
             )
             vitals_row = cur.fetchone()
 
             # Fallback if specific window had no samples (e.g. dev testing at noon with older seed data)
-            if not vitals_row or not vitals_row["total_samples"]:
-                fallback_start = latest_time - datetime.timedelta(hours=8)
+            if not vitals_row or not vitals_row["total_samples"] or not vitals_row["avg_brpm"]:
+                fallback_start = latest_time - datetime.timedelta(hours=11)
                 cur.execute(
-                    """
+                    f"""
                     SELECT 
                         COUNT(*) as total_samples,
                         COUNT(CASE WHEN state = 'ASLEEP' THEN 1 END) as asleep_samples,
                         COUNT(CASE WHEN state = 'RESTLESS' THEN 1 END) as restless_samples,
                         COUNT(CASE WHEN state = 'AWAKE' THEN 1 END) as awake_samples,
-                        AVG(breathing_rate) as avg_brpm,
-                        MIN(breathing_rate) as min_brpm,
-                        MAX(breathing_rate) as max_brpm,
-                        AVG(heart_rate) as avg_bpm,
-                        MIN(heart_rate) as min_bpm,
-                        MAX(heart_rate) as max_bpm,
+                        AVG(CASE WHEN breathing_rate > 0 THEN breathing_rate END) as avg_brpm,
+                        MIN(CASE WHEN breathing_rate > 0 THEN breathing_rate END) as min_brpm,
+                        MAX(CASE WHEN breathing_rate > 0 THEN breathing_rate END) as max_brpm,
+                        AVG(CASE WHEN heart_rate > 0 THEN heart_rate END) as avg_bpm,
+                        MIN(CASE WHEN heart_rate > 0 THEN heart_rate END) as min_bpm,
+                        MAX(CASE WHEN heart_rate > 0 THEN heart_rate END) as max_bpm,
                         MIN(time) as session_start,
                         MAX(time) as session_end
                     FROM baby_vitals
-                    WHERE time >= %s;
-                    """ if is_postgres() else """
-                    SELECT 
-                        COUNT(*) as total_samples,
-                        COUNT(CASE WHEN state = 'ASLEEP' THEN 1 END) as asleep_samples,
-                        COUNT(CASE WHEN state = 'RESTLESS' THEN 1 END) as restless_samples,
-                        COUNT(CASE WHEN state = 'AWAKE' THEN 1 END) as awake_samples,
-                        AVG(breathing_rate) as avg_brpm,
-                        MIN(breathing_rate) as min_brpm,
-                        MAX(breathing_rate) as max_brpm,
-                        AVG(heart_rate) as avg_bpm,
-                        MIN(heart_rate) as min_bpm,
-                        MAX(heart_rate) as max_bpm,
-                        MIN(time) as session_start,
-                        MAX(time) as session_end
-                    FROM baby_vitals
-                    WHERE time >= ?;
+                    WHERE time >= {"%s" if is_postgres() else "?"}{real_clause};
                     """,
-                    (fallback_start,)
+                    [fallback_start] + params_real
                 )
                 vitals_row = cur.fetchone()
                 window_start = fallback_start
@@ -178,18 +160,13 @@ def fetch_nightly_metrics(
             
             # 2. Fetch soothe events scoped to the window
             cur.execute(
-                """
-                SELECT id, triggered_at, resolved_at, voice_snippet_used, was_successful
+                f"""
+                SELECT id, triggered_at, resolved_at, voice_snippet_used, was_successful, is_real
                 FROM soothe_events
-                WHERE triggered_at >= %s AND triggered_at <= %s
-                ORDER BY triggered_at ASC;
-                """ if is_postgres() else """
-                SELECT id, triggered_at, resolved_at, voice_snippet_used, was_successful
-                FROM soothe_events
-                WHERE triggered_at >= ? AND triggered_at <= ?
+                WHERE triggered_at >= {"%s" if is_postgres() else "?"} AND triggered_at <= {"%s" if is_postgres() else "?"}{real_clause}
                 ORDER BY triggered_at ASC;
                 """,
-                (window_start, window_end)
+                [window_start, window_end] + params_real
             )
             soothe_rows = cur.fetchall()
         finally:
@@ -205,7 +182,8 @@ def fetch_nightly_metrics(
     if scheduled_hours <= 0:
         scheduled_hours = 8.0
 
-    sleep_fraction = (asleep_samples / total_samples) if total_samples > 0 else 0.95
+    valid_samples = (asleep_samples + restless_samples + awake_samples) or total_samples
+    sleep_fraction = (asleep_samples / valid_samples) if valid_samples > 0 else 0.95
     session_start = vitals_row["session_start"]
     session_end = vitals_row["session_end"]
     if session_start and session_end:
