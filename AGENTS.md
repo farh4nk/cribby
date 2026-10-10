@@ -125,6 +125,13 @@ The task checkboxes below are the original plan and are not maintained. Current 
 - Never run end to end on real hardware: database ingestion, the Gemini recap against live data, auto-soothe on the demo machine's speakers.
 - Open PRs: #20 (Presage reliability), #18 (two-way audio, night vision, PWA; conflicts), #19 (LAN HTTPS, stacked on #18).
 
+### Demo setup that works (verified 2026-10-10 evening)
+
+- **Pi:** camera only (`CRADLEECHO_SOURCE=mock`, `CRADLEECHO_STREAM_FPS=30`), connected to the Mac by an Ethernet cable. Pi eth0 must use `ipv4.method disabled, ipv6.method link-local`, or NetworkManager drops the link every minute while it waits for DHCP.
+- **Mac (home hub):** `deploy/mac/start_hub.sh` starts PulseAudio, the cable camera relay, the `mac-presage` container (Presage with frame pacing and eyes), the analytics API and ingestion worker, and `tailscale serve`. Then `cd web && npm run dev`.
+- **One URL for everyone:** `https://<mac>.<tailnet>.ts.net` (the Mac shared on Tailscale). Real vitals, eyes, recap, relaxing music and two-way "talk" (teammate's mic plays on the Mac speakers: verified). `localhost:3000` on the Mac is the backup; the Pi's own URL shows simulated vitals only.
+- `web/.env` must not set `NEXT_PUBLIC_DAEMON_URL` / `ANALYTICS_URL` / `EDGE_URL`.
+
 ### Realistic scope for the deadline (Sunday 12 PM)
 
 Aim for: a nursery camera on the Pi plus a laptop that shows the live feed, sleep state, auto-soothe and the morning recap, with the laptop computing the vitals. Do not aim for "everything runs on one Pi" (a Pi 4 is measurably too slow; a Pi 5 is untested).
