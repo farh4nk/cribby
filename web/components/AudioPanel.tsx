@@ -82,27 +82,16 @@ export function AudioPanel() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
               </svg>
             </div>
-            <div>
-              <h2 className="font-display text-base tracking-tight text-ink [font-variation-settings:'SOFT'_100]">
-                Auto-Soothe
-              </h2>
-              <p className="text-xs text-ink-faint">
-                {snapshot.status === "soothing"
-                  ? "Playing relaxing music"
-                  : snapshot.status === "fading"
-                    ? "Settled · Fading out"
-                    : snapshot.enabled
-                      ? "Relaxing music · Auto-soothe primed"
-                      : "Auto-soothe is off"}
-              </p>
-            </div>
+            <h2 className="font-display text-base tracking-tight text-ink [font-variation-settings:'SOFT'_100]">
+              Auto-Soothe
+            </h2>
           </div>
 
           <div className="flex items-center gap-2">
-            {snapshot.status === "soothing" ? (
+            {isSoothingActive ? (
               <span className="flex items-center gap-1.5 rounded-full bg-tone/20 px-2.5 py-0.5 text-xs font-medium text-tone ring-1 ring-tone/30">
                 <span className="h-1.5 w-1.5 rounded-full bg-tone breathe" />
-                Soothing
+                {snapshot.status === "fading" ? "Fading out" : "Soothing"}
               </span>
             ) : snapshot.enabled ? (
               <span className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-400 ring-1 ring-emerald-500/20">
