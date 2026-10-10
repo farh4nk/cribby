@@ -8,6 +8,7 @@ import shlex
 import re
 import threading
 import time
+from collections import deque
 
 import cv2
 import numpy as np
@@ -20,26 +21,37 @@ logger = logging.getLogger(__name__)
 
 
 class _FrameWriter:
-    """Feeds frames to the bridge's stdin pipe from its own thread; the newest frame wins.
+    """Feeds frames to the bridge's stdin pipe from its own thread.
 
     Going through the asyncio event loop cost ~4 of 30 frames/s on a busy Pi (the loop is also
     serving the preview stream and the websocket), and Presage needs >= 25 fps. The pipe is a
-    plain blocking fd, so a slow bridge naturally slows this thread and stale frames are replaced.
+    plain blocking fd, so a slow bridge naturally slows this thread.
+
+    Unpaced (pace_fps=0), the newest frame wins and stale frames are replaced. Paced, frames are
+    queued (up to PACE_QUEUE) and written on a steady clock; when the queue runs dry the last frame
+    is written again, so bursty input (a stream over the network) reaches the bridge at an even
+    rate and Presage, which timestamps on arrival, sees a steady frame rate.
     """
 
-    def __init__(self, fd: int) -> None:
+    PACE_QUEUE = 3
+
+    def __init__(self, fd: int, pace_fps: float = 0.0) -> None:
         self._fd = fd
         self._cond = threading.Condition()
-        self._data: bytes | None = None
+        self._queue: deque[bytes] = deque()
         self._closed = False
-        self._thread = threading.Thread(target=self._run, name="PresageFrameWriter", daemon=True)
+        self._interval = 1.0 / pace_fps if pace_fps > 0 else 0.0
+        target = self._run_paced if self._interval else self._run
+        self._thread = threading.Thread(target=target, name="PresageFrameWriter", daemon=True)
         self._thread.start()
 
     def submit(self, data: bytes) -> None:
         with self._cond:
-            if self._data is not None:
+            limit = self.PACE_QUEUE if self._interval else 1
+            if len(self._queue) >= limit:
+                self._queue.popleft()
                 diag.count("frames_replaced")
-            self._data = data
+            self._queue.append(data)
             self._cond.notify()
 
     def close(self) -> None:
@@ -53,20 +65,47 @@ class _FrameWriter:
             except OSError:
                 pass
 
+    def _write(self, data: bytes) -> bool:
+        view = memoryview(data)
+        try:
+            while view:
+                view = view[os.write(self._fd, view):]
+        except OSError:  # bridge exited
+            return False
+        diag.count("frames_to_bridge")
+        return True
+
     def _run(self) -> None:
         while True:
             with self._cond:
-                self._cond.wait_for(lambda: self._data is not None or self._closed)
+                self._cond.wait_for(lambda: self._queue or self._closed)
                 if self._closed:
                     return
-                data, self._data = self._data, None
-            view = memoryview(data)
-            try:
-                while view:
-                    view = view[os.write(self._fd, view):]
-            except OSError:  # bridge exited
+                data = self._queue.popleft()
+            if not self._write(data):
                 return
-            diag.count("frames_to_bridge")
+
+    def _run_paced(self) -> None:
+        with self._cond:  # nothing to repeat until the first frame arrives
+            self._cond.wait_for(lambda: self._queue or self._closed)
+        last: bytes | None = None
+        next_t = time.monotonic()
+        while True:
+            with self._cond:
+                if self._closed:
+                    return
+                if self._queue:
+                    last = self._queue.popleft()
+                else:
+                    diag.count("frames_repeated")
+            if last is not None and not self._write(last):
+                return
+            next_t += self._interval
+            delay = next_t - time.monotonic()
+            if delay > 0:
+                time.sleep(delay)
+            elif delay < -self._interval:
+                next_t = time.monotonic()  # fell behind (slow bridge): don't burst to catch up
 
 
 class PresageVitalsSource:
@@ -326,7 +365,7 @@ class PresageVitalsSource:
                     if read_fd is not None:
                         os.close(read_fd)
                 if write_fd is not None:
-                    self._writer = _FrameWriter(write_fd)
+                    self._writer = _FrameWriter(write_fd, settings.presage_pace_fps)
 
                 while self._running and self._proc.stdout is not None:
                     line = await self._proc.stdout.readline()

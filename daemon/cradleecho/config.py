@@ -39,6 +39,10 @@ class Settings(BaseSettings):
         validation_alias="CRADLEECHO_PRESAGE_CMD"
     )
     presage_fps: float = Field(default=30.0, gt=0, validation_alias="CRADLEECHO_PRESAGE_FPS")
+    # Feed the bridge at a steady rate (0 = off, write frames as they arrive). The bridge
+    # timestamps frames on arrival, so a network stream that delivers frames in bursts (measured:
+    # a third of gaps under 17 ms, some over 150 ms) reads as a low frame rate to Presage.
+    presage_pace_fps: float = Field(default=0.0, ge=0, validation_alias="CRADLEECHO_PRESAGE_PACE_FPS")
     host: str = Field(default="0.0.0.0", validation_alias="CRADLEECHO_HOST")
     port: int = Field(default=8000, validation_alias="CRADLEECHO_PORT")
     cors_origins: str = Field(default="*", validation_alias="CRADLEECHO_CORS_ORIGINS")
