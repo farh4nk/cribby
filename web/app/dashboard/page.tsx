@@ -42,6 +42,31 @@ function formatTime12(timeStr: string): string {
   }
 }
 
+function formatPointTime(timeStr?: string): string {
+  if (!timeStr) return "";
+  try {
+    const d = new Date(timeStr);
+    if (isNaN(d.getTime())) return timeStr;
+    return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
+  } catch {
+    return timeStr;
+  }
+}
+
+const fallbackTrend: TrendEntry[] = [
+  { time: "2026-10-10T20:00:00Z", breathing_rate: 24.2, heart_rate: 110, state: "DROWSY" },
+  { time: "2026-10-10T21:00:00Z", breathing_rate: 23.8, heart_rate: 108, state: "ASLEEP" },
+  { time: "2026-10-10T22:30:00Z", breathing_rate: 24.5, heart_rate: 112, state: "ASLEEP" },
+  { time: "2026-10-10T00:00:00Z", breathing_rate: 25.1, heart_rate: 115, state: "ASLEEP" },
+  { time: "2026-10-10T01:30:00Z", breathing_rate: 24.0, heart_rate: 107, state: "ASLEEP" },
+  { time: "2026-10-10T03:00:00Z", breathing_rate: 34.6, heart_rate: 136, state: "RESTLESS" },
+  { time: "2026-10-10T03:15:00Z", breathing_rate: 31.2, heart_rate: 128, state: "RESTLESS" },
+  { time: "2026-10-10T03:30:00Z", breathing_rate: 25.0, heart_rate: 110, state: "ASLEEP" },
+  { time: "2026-10-10T05:00:00Z", breathing_rate: 24.1, heart_rate: 109, state: "ASLEEP" },
+  { time: "2026-10-10T06:30:00Z", breathing_rate: 25.8, heart_rate: 114, state: "DROWSY" },
+  { time: "2026-10-10T07:00:00Z", breathing_rate: 27.4, heart_rate: 122, state: "AWAKE" },
+];
+
 export default function DashboardPage() {
   const title = babyTitle(useBabyName() ?? "");
   const { baby } = useAuth();
@@ -55,6 +80,20 @@ export default function DashboardPage() {
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editModalOpen, setEditModalOpen] = useState(false);
+  const [hoveredTrendIndex, setHoveredTrendIndex] = useState<number | null>(null);
+
+  const activeTrend = trend.length > 1 ? trend : fallbackTrend;
+  const activePoint = hoveredTrendIndex !== null ? activeTrend[hoveredTrendIndex] : null;
+
+  const handleChartHover = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clientX = "touches" in e ? e.touches[0]?.clientX : e.clientX;
+    if (clientX === undefined) return;
+    const x = Math.max(0, Math.min(rect.width, clientX - rect.left));
+    const fraction = x / rect.width;
+    const idx = Math.round(fraction * (activeTrend.length - 1));
+    setHoveredTrendIndex(Math.max(0, Math.min(activeTrend.length - 1, idx)));
+  };
 
   const loadDashboardData = useCallback(async (bTime = bedtime, wTime = wakeTime, force = false) => {
     const bName = babyTitle(getBabyName());
@@ -221,7 +260,7 @@ export default function DashboardPage() {
 
       {!loading && (
         <>
-          {/* 1. Vitals Trends: Breathing & Heart Rate Charts (Moved to top) */}
+          {/* 1. Vitals Trends: Breathing & Heart Rate Charts with Interactive Scrubber */}
           <section className="mt-10 grid gap-8 lg:grid-cols-2">
             {/* Breathing Rate Trend Card */}
             <div className="rounded-3xl bg-white/5 p-6 ring-1 ring-white/10 sm:p-8">
@@ -230,21 +269,78 @@ export default function DashboardPage() {
                   <h3 className="font-display text-xl text-ink [font-variation-settings:'SOFT'_100]">
                     Breathing Rate (BrPM)
                   </h3>
-                  <p className="mt-1 text-xs text-ink-dim">Target infant range: 20–30 breaths/min</p>
+                  <p className="mt-1 text-xs text-ink-dim">
+                    {activePoint ? (
+                      <span className="flex items-center gap-1.5 text-ink">
+                        <span className="tabular-nums font-medium">{formatPointTime(activePoint.time)}</span>
+                        <span>·</span>
+                        <span className={`inline-flex items-center gap-1 font-semibold ${STATE_COLORS[activePoint.state]?.text || "text-tone"}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${STATE_COLORS[activePoint.state]?.bg || "bg-tone"}`} />
+                          {STATE_COLORS[activePoint.state]?.label || activePoint.state}
+                        </span>
+                      </span>
+                    ) : (
+                      "Target infant range: 20–30 breaths/min"
+                    )}
+                  </p>
                 </div>
-                <span className="font-display text-2xl text-tone tabular-nums">
-                  {trend.length > 0 ? trend[trend.length - 1].breathing_rate : 24.3}
-                </span>
+                <div className="text-right">
+                  <span className="font-display text-2xl text-tone tabular-nums">
+                    {activePoint
+                      ? activePoint.breathing_rate.toFixed(1)
+                      : (activeTrend[activeTrend.length - 1]?.breathing_rate.toFixed(1) || "24.3")}
+                  </span>
+                  <span className="ml-1 text-xs font-medium text-ink-dim">BrPM</span>
+                </div>
               </div>
 
-              {/* SVG Trend Sparkline Chart */}
-              <div className="mt-6 h-36 w-full">
+              {/* Interactive SVG Trend Sparkline Chart */}
+              <div
+                className="relative mt-6 h-36 w-full cursor-crosshair select-none touch-none"
+                onMouseMove={handleChartHover}
+                onMouseLeave={() => setHoveredTrendIndex(null)}
+                onTouchMove={handleChartHover}
+                onTouchEnd={() => setHoveredTrendIndex(null)}
+              >
+                {/* Floating tooltip above active point */}
+                {activePoint && hoveredTrendIndex !== null && (
+                  <div
+                    className={`pointer-events-none absolute -top-1 z-30 transition-transform duration-75 ${
+                      (hoveredTrendIndex / (activeTrend.length - 1)) * 100 < 15
+                        ? "translate-x-0"
+                        : (hoveredTrendIndex / (activeTrend.length - 1)) * 100 > 85
+                        ? "-translate-x-full"
+                        : "-translate-x-1/2"
+                    }`}
+                    style={{ left: `${(hoveredTrendIndex / (activeTrend.length - 1)) * 100}%` }}
+                  >
+                    <div className="rounded-xl bg-[#0f111f]/95 px-3 py-1.5 shadow-2xl ring-1 ring-white/15 backdrop-blur-md">
+                      <div className="flex items-center gap-2">
+                        <span className="font-display text-sm font-semibold text-tone">
+                          {activePoint.breathing_rate.toFixed(1)} BrPM
+                        </span>
+                        <span
+                          className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                            STATE_COLORS[activePoint.state]?.text || "text-tone"
+                          } bg-white/5`}
+                        >
+                          {STATE_COLORS[activePoint.state]?.label || activePoint.state}
+                        </span>
+                      </div>
+                      <div className="mt-0.5 text-[10px] tabular-nums text-ink-dim">
+                        {formatPointTime(activePoint.time)}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <svg className="h-full w-full overflow-visible" viewBox="0 0 300 100" preserveAspectRatio="none">
                   {/* Target 20-30 baseline zone */}
-                  <rect x="0" y="30" width="300" height="40" fill="currentColor" className="text-tone/10" />
-                  <line x1="0" y1="50" x2="300" y2="50" stroke="currentColor" strokeDasharray="4 4" className="text-tone/20" />
-                  {/* Data path */}
-                  {trend.length > 1 && (
+                  <rect x="0" y="42" width="300" height="32" fill="currentColor" className="text-tone/10" />
+                  <line x1="0" y1="58" x2="300" y2="58" stroke="currentColor" strokeDasharray="4 4" className="text-tone/20" />
+
+                  {/* Data polyline */}
+                  {activeTrend.length > 1 && (
                     <polyline
                       fill="none"
                       stroke="currentColor"
@@ -252,9 +348,9 @@ export default function DashboardPage() {
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       className="text-tone"
-                      points={trend
+                      points={activeTrend
                         .map((pt, i) => {
-                          const x = (i / (trend.length - 1)) * 300;
+                          const x = (i / (activeTrend.length - 1)) * 300;
                           const clamped = Math.max(15, Math.min(40, pt.breathing_rate || 24));
                           const y = 90 - ((clamped - 15) / 25) * 80;
                           return `${x},${y}`;
@@ -262,12 +358,42 @@ export default function DashboardPage() {
                         .join(" ")}
                     />
                   )}
+
+                  {/* Scrubber indicator */}
+                  {activePoint && hoveredTrendIndex !== null && (
+                    <>
+                      {(() => {
+                        const hoverX = (hoveredTrendIndex / (activeTrend.length - 1)) * 300;
+                        const clamped = Math.max(15, Math.min(40, activePoint.breathing_rate || 24));
+                        const hoverY = 90 - ((clamped - 15) / 25) * 80;
+                        return (
+                          <g className="pointer-events-none">
+                            <line
+                              x1={hoverX}
+                              y1={0}
+                              x2={hoverX}
+                              y2={100}
+                              stroke="currentColor"
+                              strokeWidth="1.5"
+                              strokeDasharray="3 3"
+                              className="text-white/40"
+                            />
+                            <circle cx={hoverX} cy={hoverY} r="7" className="fill-tone/30 animate-ping" />
+                            <circle cx={hoverX} cy={hoverY} r="4" className="fill-tone stroke-white stroke-[1.5]" />
+                          </g>
+                        );
+                      })()}
+                    </>
+                  )}
                 </svg>
               </div>
+
               <div className="mt-2 flex justify-between text-xs text-ink-faint">
-                <span>Bedtime ({formatTime12(bedtime)})</span>
-                <span>Restless spike (36 BrPM)</span>
-                <span>Wake Time ({formatTime12(wakeTime)})</span>
+                <span>{formatPointTime(activeTrend[0]?.time) || `Bedtime (${formatTime12(bedtime)})`}</span>
+                <span className="italic text-ink-dim/70">
+                  {hoveredTrendIndex !== null ? "Inspecting point…" : "Hover / scroll cursor to inspect"}
+                </span>
+                <span>{formatPointTime(activeTrend[activeTrend.length - 1]?.time) || `Wake (${formatTime12(wakeTime)})`}</span>
               </div>
             </div>
 
@@ -278,19 +404,78 @@ export default function DashboardPage() {
                   <h3 className="font-display text-xl text-ink [font-variation-settings:'SOFT'_100]">
                     Heart Rate (BPM)
                   </h3>
-                  <p className="mt-1 text-xs text-ink-dim">Normal infant resting range: 100–130 BPM</p>
+                  <p className="mt-1 text-xs text-ink-dim">
+                    {activePoint ? (
+                      <span className="flex items-center gap-1.5 text-ink">
+                        <span className="tabular-nums font-medium">{formatPointTime(activePoint.time)}</span>
+                        <span>·</span>
+                        <span className={`inline-flex items-center gap-1 font-semibold ${STATE_COLORS[activePoint.state]?.text || "text-rose-300"}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${STATE_COLORS[activePoint.state]?.bg || "bg-rose-400"}`} />
+                          {STATE_COLORS[activePoint.state]?.label || activePoint.state}
+                        </span>
+                      </span>
+                    ) : (
+                      "Normal infant resting range: 100–130 BPM"
+                    )}
+                  </p>
                 </div>
-                <span className="font-display text-2xl text-rose-300 tabular-nums">
-                  {trend.length > 0 ? trend[trend.length - 1].heart_rate : 109}
-                </span>
+                <div className="text-right">
+                  <span className="font-display text-2xl text-rose-300 tabular-nums">
+                    {activePoint
+                      ? Math.round(activePoint.heart_rate)
+                      : Math.round(activeTrend[activeTrend.length - 1]?.heart_rate || 109)}
+                  </span>
+                  <span className="ml-1 text-xs font-medium text-ink-dim">BPM</span>
+                </div>
               </div>
 
-              {/* SVG Trend Sparkline Chart */}
-              <div className="mt-6 h-36 w-full">
+              {/* Interactive SVG Trend Sparkline Chart */}
+              <div
+                className="relative mt-6 h-36 w-full cursor-crosshair select-none touch-none"
+                onMouseMove={handleChartHover}
+                onMouseLeave={() => setHoveredTrendIndex(null)}
+                onTouchMove={handleChartHover}
+                onTouchEnd={() => setHoveredTrendIndex(null)}
+              >
+                {/* Floating tooltip above active point */}
+                {activePoint && hoveredTrendIndex !== null && (
+                  <div
+                    className={`pointer-events-none absolute -top-1 z-30 transition-transform duration-75 ${
+                      (hoveredTrendIndex / (activeTrend.length - 1)) * 100 < 15
+                        ? "translate-x-0"
+                        : (hoveredTrendIndex / (activeTrend.length - 1)) * 100 > 85
+                        ? "-translate-x-full"
+                        : "-translate-x-1/2"
+                    }`}
+                    style={{ left: `${(hoveredTrendIndex / (activeTrend.length - 1)) * 100}%` }}
+                  >
+                    <div className="rounded-xl bg-[#0f111f]/95 px-3 py-1.5 shadow-2xl ring-1 ring-white/15 backdrop-blur-md">
+                      <div className="flex items-center gap-2">
+                        <span className="font-display text-sm font-semibold text-rose-300">
+                          {Math.round(activePoint.heart_rate)} BPM
+                        </span>
+                        <span
+                          className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                            STATE_COLORS[activePoint.state]?.text || "text-rose-300"
+                          } bg-white/5`}
+                        >
+                          {STATE_COLORS[activePoint.state]?.label || activePoint.state}
+                        </span>
+                      </div>
+                      <div className="mt-0.5 text-[10px] tabular-nums text-ink-dim">
+                        {formatPointTime(activePoint.time)}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <svg className="h-full w-full overflow-visible" viewBox="0 0 300 100" preserveAspectRatio="none">
-                  <rect x="0" y="25" width="300" height="50" fill="currentColor" className="text-rose-400/10" />
-                  <line x1="0" y1="50" x2="300" y2="50" stroke="currentColor" strokeDasharray="4 4" className="text-rose-400/20" />
-                  {trend.length > 1 && (
+                  {/* Target 100-130 baseline zone */}
+                  <rect x="0" y="36.6" width="300" height="40" fill="currentColor" className="text-rose-400/10" />
+                  <line x1="0" y1="56.6" x2="300" y2="56.6" stroke="currentColor" strokeDasharray="4 4" className="text-rose-400/20" />
+
+                  {/* Data polyline */}
+                  {activeTrend.length > 1 && (
                     <polyline
                       fill="none"
                       stroke="currentColor"
@@ -298,9 +483,9 @@ export default function DashboardPage() {
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       className="text-rose-300"
-                      points={trend
+                      points={activeTrend
                         .map((pt, i) => {
-                          const x = (i / (trend.length - 1)) * 300;
+                          const x = (i / (activeTrend.length - 1)) * 300;
                           const clamped = Math.max(90, Math.min(150, pt.heart_rate || 109));
                           const y = 90 - ((clamped - 90) / 60) * 80;
                           return `${x},${y}`;
@@ -308,12 +493,42 @@ export default function DashboardPage() {
                         .join(" ")}
                     />
                   )}
+
+                  {/* Scrubber indicator */}
+                  {activePoint && hoveredTrendIndex !== null && (
+                    <>
+                      {(() => {
+                        const hoverX = (hoveredTrendIndex / (activeTrend.length - 1)) * 300;
+                        const clamped = Math.max(90, Math.min(150, activePoint.heart_rate || 109));
+                        const hoverY = 90 - ((clamped - 90) / 60) * 80;
+                        return (
+                          <g className="pointer-events-none">
+                            <line
+                              x1={hoverX}
+                              y1={0}
+                              x2={hoverX}
+                              y2={100}
+                              stroke="currentColor"
+                              strokeWidth="1.5"
+                              strokeDasharray="3 3"
+                              className="text-white/40"
+                            />
+                            <circle cx={hoverX} cy={hoverY} r="7" className="fill-rose-400/30 animate-ping" />
+                            <circle cx={hoverX} cy={hoverY} r="4" className="fill-rose-300 stroke-white stroke-[1.5]" />
+                          </g>
+                        );
+                      })()}
+                    </>
+                  )}
                 </svg>
               </div>
+
               <div className="mt-2 flex justify-between text-xs text-ink-faint">
-                <span>Bedtime ({formatTime12(bedtime)})</span>
-                <span>Restless spike (134 BPM)</span>
-                <span>Wake Time ({formatTime12(wakeTime)})</span>
+                <span>{formatPointTime(activeTrend[0]?.time) || `Bedtime (${formatTime12(bedtime)})`}</span>
+                <span className="italic text-ink-dim/70">
+                  {hoveredTrendIndex !== null ? "Inspecting point…" : "Hover / scroll cursor to inspect"}
+                </span>
+                <span>{formatPointTime(activeTrend[activeTrend.length - 1]?.time) || `Wake (${formatTime12(wakeTime)})`}</span>
               </div>
             </div>
           </section>
@@ -370,14 +585,14 @@ export default function DashboardPage() {
             </div>
           </section>
 
-          {/* 3. Gemini Nightly Synthesis & Gemini Chat Side-by-Side */}
+          {/* 3. Summary & Q&A Chat Side-by-Side */}
           <div className="mt-8 grid gap-8 lg:grid-cols-2">
-            {/* Gemini AI Morning Briefing */}
+            {/* Morning Briefing Summary */}
             <section className="flex flex-col justify-between rounded-3xl bg-white/5 p-6 ring-1 ring-white/10 sm:p-8">
               <div>
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <h2 className="font-display text-2xl text-ink [font-variation-settings:'SOFT'_100]">
-                    Gemini Nightly Synthesis
+                    Summary
                   </h2>
                   <span className="text-xs text-ink-faint">
                     {formatTime12(bedtime)} – {formatTime12(wakeTime)}

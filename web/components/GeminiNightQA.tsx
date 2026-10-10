@@ -69,7 +69,7 @@ export function GeminiNightQA({ bedtime = "20:00", wakeTime = "07:00", className
             />
           </svg>
           <h2 className="font-display text-2xl text-ink [font-variation-settings:'SOFT'_100]">
-            Ask Gemini About {babyTitle(name)}’s Night
+            Ask about {babyTitle(name)}’s sleep
           </h2>
         </div>
         <span className="text-xs text-ink-faint">Interactive Sleep Intelligence</span>
