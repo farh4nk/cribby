@@ -48,9 +48,21 @@ CREATE TABLE IF NOT EXISTS users (
     email VARCHAR(255) UNIQUE NOT NULL,
     name VARCHAR(255),
     avatar_url TEXT,
+    onboarded BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     last_login_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Backward-compatibility alter for existing deployments
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'users' AND column_name = 'onboarded'
+    ) THEN
+        ALTER TABLE users ADD COLUMN onboarded BOOLEAN NOT NULL DEFAULT FALSE;
+    END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);
 

@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS users (
     email TEXT UNIQUE NOT NULL,
     name TEXT,
     avatar_url TEXT,
+    onboarded BOOLEAN DEFAULT 0,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     last_login_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
@@ -63,6 +64,11 @@ def run_migrations():
         if isinstance(conn, sqlite3.Connection):
             print("Target: SQLite (cradleecho_local.db)")
             conn.executescript(SQLITE_FALLBACK_SCHEMA)
+            try:
+                conn.execute("ALTER TABLE users ADD COLUMN onboarded BOOLEAN DEFAULT 0;")
+                conn.commit()
+            except Exception:
+                pass  # column already exists
             print("Successfully migrated tables ('users', 'babies', 'baby_vitals', 'soothe_events') to SQLite!")
         else:
             print(f"Target: PostgreSQL / Tiger Data ({DATABASE_URL.split('@')[-1] if '@' in DATABASE_URL else 'PostgreSQL'})")

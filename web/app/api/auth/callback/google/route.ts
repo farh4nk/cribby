@@ -81,12 +81,20 @@ export async function GET(request: Request) {
     const syncData = await syncResponse.json();
     const user = syncData.user;
     const baby = syncData.baby;
+    const needsOnboarding = Boolean(syncData.needs_onboarding);
 
     // 4. Create signed session token
-    const sessionToken = await createSessionToken({ user, baby });
+    const sessionToken = await createSessionToken({
+      user,
+      baby,
+      needs_onboarding: needsOnboarding,
+    });
 
     // 5. Build response with HTTP-only cookie and redirect home
-    const response = NextResponse.redirect(`${origin}/?auth_success=1`);
+    const redirectTarget = needsOnboarding
+      ? `${origin}/?onboarding=1`
+      : `${origin}/?auth_success=1`;
+    const response = NextResponse.redirect(redirectTarget);
     response.cookies.set({
       name: SESSION_COOKIE_NAME,
       value: sessionToken,

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Fraunces, Instrument_Sans } from "next/font/google";
 import { AuthProvider } from "@/context/AuthProvider";
 import { NightShell } from "@/components/NightShell";
+import { OnboardingModal } from "@/components/OnboardingModal";
 import { TelemetryProvider } from "@/context/TelemetryProvider";
 import { PwaRegister } from "@/components/PwaRegister";
 import { APP_NAME } from "@/lib/config";
@@ -48,6 +49,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <TelemetryProvider>
             <NightShell>{children}</NightShell>
           </TelemetryProvider>
+          <OnboardingModal />
         </AuthProvider>
         <PwaRegister />
       </body>

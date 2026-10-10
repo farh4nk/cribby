@@ -5,10 +5,11 @@ export interface AuthUser {
   email: string;
   name: string;
   avatar_url: string | null;
+  onboarded?: boolean;
 }
 
 export interface BabyProfile {
-  id: number;
+  id: string | number;
   parent_id: string;
   name: string;
   bedtime: string;
@@ -19,6 +20,7 @@ export interface BabyProfile {
 export interface SessionData {
   user: AuthUser;
   baby: BabyProfile;
+  needs_onboarding?: boolean;
 }
 
 export const SESSION_COOKIE_NAME = "cradleecho_session";
@@ -41,6 +43,7 @@ export async function createSessionToken(session: SessionData): Promise<string> 
   return await new SignJWT({
     user: session.user,
     baby: session.baby,
+    needs_onboarding: session.needs_onboarding ?? false,
   })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
@@ -56,6 +59,7 @@ export async function verifySessionToken(token: string): Promise<SessionData | n
     return {
       user: payload.user as AuthUser,
       baby: payload.baby as BabyProfile,
+      needs_onboarding: Boolean(payload.needs_onboarding),
     };
   } catch {
     return null;

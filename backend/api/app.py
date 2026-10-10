@@ -261,6 +261,11 @@ class UserSyncRequest(BaseModel):
     name: Optional[str] = None
     avatar_url: Optional[str] = None
 
+class UserOnboardingRequest(BaseModel):
+    baby_name: str
+    bedtime: Optional[str] = "20:00"
+    wake_time: Optional[str] = "07:00"
+
 class BabyProfileUpdate(BaseModel):
     name: Optional[str] = None
     bedtime: Optional[str] = None
@@ -274,6 +279,14 @@ def sync_user(req: UserSyncRequest):
     with get_db_connection() as conn:
         cur = conn.cursor()
         try:
+            # Check if this user already exists prior to upsert
+            cur.execute(
+                "SELECT id, onboarded FROM users WHERE id = %s;" if is_postgres(conn) else "SELECT id, onboarded FROM users WHERE id = ?;",
+                (req.id,)
+            )
+            existing_user = cur.fetchone()
+            is_first_time = existing_user is None
+
             if is_postgres(conn):
                 cur.execute(
                     """
@@ -283,7 +296,7 @@ def sync_user(req: UserSyncRequest):
                         name = EXCLUDED.name,
                         avatar_url = EXCLUDED.avatar_url,
                         last_login_at = NOW()
-                    RETURNING id, email, name, avatar_url, created_at;
+                    RETURNING id, email, name, avatar_url, onboarded, created_at;
                     """,
                     (req.id, req.email, req.name, req.avatar_url)
                 )
@@ -317,7 +330,7 @@ def sync_user(req: UserSyncRequest):
                     """,
                     (req.id, req.email, req.name, req.avatar_url)
                 )
-                cur.execute("SELECT id, email, name, avatar_url, created_at FROM users WHERE id = ?;", (req.id,))
+                cur.execute("SELECT id, email, name, avatar_url, onboarded, created_at FROM users WHERE id = ?;", (req.id,))
                 user_row = dict(cur.fetchone())
 
                 cur.execute("SELECT * FROM babies WHERE parent_id = ? ORDER BY created_at ASC;", (req.id,))
@@ -337,7 +350,83 @@ def sync_user(req: UserSyncRequest):
                 else:
                     baby = babies[0]
 
-            return {"user": user_row, "baby": baby, "babies": babies}
+            user_onboarded = bool(user_row.get("onboarded", False))
+            # Needs onboarding if not marked onboarded OR if baby name is still empty
+            needs_onboarding = is_first_time or not user_onboarded or not bool(baby.get("name", "").strip())
+
+            return {
+                "user": user_row,
+                "baby": baby,
+                "babies": babies,
+                "is_first_time": is_first_time,
+                "needs_onboarding": needs_onboarding,
+            }
+        finally:
+            cur.close()
+
+@app.post("/api/users/{user_id}/onboarding")
+def complete_onboarding(user_id: str, req: UserOnboardingRequest):
+    """Completes initial onboarding: sets baby's name and sleep schedule, marks user as onboarded."""
+    import uuid
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        try:
+            clean_name = req.baby_name.strip()
+            if not clean_name:
+                raise HTTPException(status_code=400, detail="Baby name is required")
+
+            cur.execute(
+                "SELECT * FROM babies WHERE parent_id = %s ORDER BY created_at ASC;" if is_postgres(conn) else "SELECT * FROM babies WHERE parent_id = ? ORDER BY created_at ASC;",
+                (user_id,)
+            )
+            babies = [dict(r) for r in cur.fetchall()]
+            if babies:
+                baby_id = babies[0]["id"]
+                cur.execute(
+                    """
+                    UPDATE babies SET name = %s, bedtime = %s, wake_time = %s WHERE id = %s;
+                    """ if is_postgres(conn) else """
+                    UPDATE babies SET name = ?, bedtime = ?, wake_time = ? WHERE id = ?;
+                    """,
+                    (clean_name, req.bedtime or "20:00", req.wake_time or "07:00", baby_id)
+                )
+            else:
+                baby_id = str(uuid.uuid4())
+                cur.execute(
+                    """
+                    INSERT INTO babies (id, parent_id, name, bedtime, wake_time)
+                    VALUES (%s, %s, %s, %s, %s);
+                    """ if is_postgres(conn) else """
+                    INSERT INTO babies (id, parent_id, name, bedtime, wake_time)
+                    VALUES (?, ?, ?, ?, ?);
+                    """,
+                    (baby_id, user_id, clean_name, req.bedtime or "20:00", req.wake_time or "07:00")
+                )
+
+            # Mark parent as onboarded
+            cur.execute(
+                "UPDATE users SET onboarded = TRUE WHERE id = %s;" if is_postgres(conn) else "UPDATE users SET onboarded = 1 WHERE id = ?;",
+                (user_id,)
+            )
+
+            cur.execute(
+                "SELECT * FROM babies WHERE id = %s;" if is_postgres(conn) else "SELECT * FROM babies WHERE id = ?;",
+                (baby_id,)
+            )
+            baby = dict(cur.fetchone())
+
+            cur.execute(
+                "SELECT id, email, name, avatar_url, onboarded, created_at FROM users WHERE id = %s;" if is_postgres(conn) else "SELECT id, email, name, avatar_url, onboarded, created_at FROM users WHERE id = ?;",
+                (user_id,)
+            )
+            user_row = dict(cur.fetchone())
+
+            return {
+                "status": "onboarded",
+                "user": user_row,
+                "baby": baby,
+                "needs_onboarding": False
+            }
         finally:
             cur.close()
 
