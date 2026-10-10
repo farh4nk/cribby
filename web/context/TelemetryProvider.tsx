@@ -10,8 +10,10 @@ import {
   type ReactNode,
 } from "react";
 import {
+  DEMO_VITALS_ALERT,
   HISTORY_LENGTH,
   MOCK,
+  SIMULATE_RESTLESS_MS,
   STALE_AFTER_MS,
   VITALS_ALERT,
   cameraUrl,
@@ -172,6 +174,9 @@ export function TelemetryProvider({ children }: { children: ReactNode }) {
   }, [record]);
 
   const simulateRestless = useCallback(async () => {
+    // Demo preset (low limit, 5s sustain, simulated data allowed) for the length of the episode,
+    // plus a little slack so the alert can land before the readings settle.
+    vitalsMonitor.current.applyTemporarily(DEMO_VITALS_ALERT, SIMULATE_RESTLESS_MS + 5000);
     if (MOCK) {
       mockSource.current?.simulateRestless();
       return;
@@ -184,21 +189,26 @@ export function TelemetryProvider({ children }: { children: ReactNode }) {
     }
 
     // Graceful fallback: simulate restless episode locally if daemon endpoint fails
-    const nowIso = new Date().toISOString();
-    handleMessage({
-      timestamp: nowIso,
-      state: "RESTLESS",
-      vitals: { brpm: 34.5, bpm: 122.0, confidence: 0.92 },
-      motion_index: 0.76,
-    });
+    // Streams readings like the daemon does (2 Hz) so time-based logic, like the alert's
+    // sustain timer, behaves the same as it would live.
+    const sendRestless = () =>
+      handleMessage({
+        timestamp: new Date().toISOString(),
+        state: "RESTLESS",
+        vitals: { brpm: 34.5, bpm: 122.0, confidence: 0.92 },
+        motion_index: 0.76,
+      });
+    sendRestless();
+    const stream = setInterval(sendRestless, 500);
     setTimeout(() => {
+      clearInterval(stream);
       handleMessage({
         timestamp: new Date().toISOString(),
         state: "ASLEEP",
         vitals: { brpm: 24.0, bpm: 108.0, confidence: 0.95 },
         motion_index: 0.06,
       });
-    }, 15000);
+    }, SIMULATE_RESTLESS_MS);
   }, [handleMessage]);
 
   const setCameraEnabled = useCallback(async (enabled: boolean) => {

@@ -84,6 +84,17 @@ const num = (v: string | undefined, fallback: number) => {
   const n = v === undefined || v === "" ? NaN : Number(v);
   return Number.isFinite(n) ? n : fallback;
 };
+// Applied automatically for a short window after "Simulate restless" is pressed, so the demo
+// always triggers the alert without any .env settings. Real monitoring keeps VITALS_ALERT.
+export const DEMO_VITALS_ALERT = {
+  brpmHigh: 30,
+  bpmHigh: 180,
+  sustainS: 5,
+  cooldownS: 60,
+  minConfidence: 0.5,
+  onSimulated: true,
+};
+
 export const VITALS_ALERT = {
   brpmHigh: num(process.env.NEXT_PUBLIC_ALERT_BRPM_HIGH, 60), // breaths per minute
   bpmHigh: num(process.env.NEXT_PUBLIC_ALERT_BPM_HIGH, 180), // heartbeats per minute
