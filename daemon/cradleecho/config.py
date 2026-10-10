@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     # Requested from the camera. Presage needs >= 25 fps; without an explicit request many UVC
     # cameras (e.g. Logitech Brio 101) fall back to a 15 fps default mode.
     camera_fps: float = Field(default=30.0, gt=0, validation_alias="CRADLEECHO_CAMERA_FPS")
+    # No frames for this long (stream ended, Pi restarted, camera unplugged): close and reopen the
+    # camera. Also the wait between attempts while it can't be opened.
+    camera_reconnect_s: float = Field(default=3.0, gt=0, validation_alias="CRADLEECHO_CAMERA_RECONNECT_S")
     # Rate of the MJPEG preview while someone is watching. Presage gets every camera frame
     # regardless; encoding JPEGs at the full 30 fps would take CPU the Presage bridge needs.
     stream_fps: float = Field(default=20.0, gt=0, validation_alias="CRADLEECHO_STREAM_FPS")

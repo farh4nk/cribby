@@ -127,6 +127,7 @@ class Camera:
         self._raw_cond = threading.Condition()
         self._latest_raw: np.ndarray | None = None
         self._raw_seq: int = 0
+        self._last_frame_at: float = 0.0  # monotonic time of the last good frame (reconnect watchdog)
 
         # Listeners (face gate, Presage push) run on their own thread, newest frame only, so
         # their cost never slows capture, motion or the MJPEG stream.
@@ -305,6 +306,8 @@ class Camera:
                 ret, frame = cap.read()
             ok = bool(ret) and frame is not None
             with self._raw_cond:
+                if ok:
+                    self._last_frame_at = time.monotonic()
                 self._latest_raw = frame if ok else None
                 self._raw_seq += 1
                 self._raw_cond.notify_all()
@@ -324,6 +327,10 @@ class Camera:
     def _open_device(self):
         """Open the camera and start its reader thread: (cap, reader, reader_stop), or Nones."""
         logger.info("Opening camera device: %s", self._device)
+        if isinstance(self._device, str) and "://" in self._device:
+            # A network stream (the Pi's /video_feed): give up on a dead connection after 5 s
+            # instead of ffmpeg's default 30 s, so the reconnect watchdog can act sooner.
+            os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rw_timeout;5000000")
         cap = cv2.VideoCapture(self._device)
         if cap is None or not cap.isOpened():
             logger.warning("Could not open camera device %s; using synthetic feed", self._device)
@@ -357,7 +364,7 @@ class Camera:
         cap = reader = reader_stop = None
         prev_gray: np.ndarray | None = None
         seen_seq = 0
-        open_failed = False
+        retry_at = 0.0  # monotonic time of the next open attempt (0 = now)
         paused_published = False
 
         # If dummy or none specified, keep serving fallback frame without trying hardware
@@ -376,7 +383,7 @@ class Camera:
                         cap = reader = reader_stop = None
                         prev_gray = None
                         logger.info("Camera turned off")
-                    open_failed = False
+                    retry_at = 0.0
                     if not paused_published:
                         paused_published = True
                         with self._lock:
@@ -391,11 +398,23 @@ class Camera:
                 if paused_published:
                     paused_published = False
                     logger.info("Camera turned on")
-                if use_hardware and cap is None and not open_failed:
+                if use_hardware and cap is None and time.monotonic() >= retry_at:
                     cap, reader, reader_stop = self._open_device()
-                    open_failed = cap is None
                     with self._raw_cond:
                         seen_seq = self._raw_seq
+                        self._last_frame_at = time.monotonic()  # grace period to deliver a frame
+                    if cap is None:
+                        retry_at = time.monotonic() + settings.camera_reconnect_s
+                elif cap is not None and time.monotonic() - self._last_frame_at > settings.camera_reconnect_s:
+                    # Opened but no frames for a while: the stream ended (e.g. the Pi restarted) or
+                    # the camera was unplugged. Close it; the branch above reopens it.
+                    logger.warning(
+                        "No camera frames for %.0f s; reconnecting to %s", settings.camera_reconnect_s, self._device
+                    )
+                    self._close_device(cap, reader, reader_stop)
+                    cap = reader = reader_stop = None
+                    prev_gray = None
+                    retry_at = 0.0
 
                 frame = None
                 if reader is not None:
