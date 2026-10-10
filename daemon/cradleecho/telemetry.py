@@ -206,12 +206,17 @@ class TelemetryHub:
 
         reading_confidence = 0.0 if (forced or gate) else reading.confidence
 
+        eyes = None
+        if settings.eyes_in_classifier and getattr(self.source, "session_running", False):
+            eyes = getattr(self.source, "eyes", (None, None))[0]
+
         reading_with_motion = Reading(
             brpm=reading.brpm,
             bpm=reading.bpm,
             confidence=reading_confidence,
             motion_index=motion,
             timestamp=reading.timestamp,
+            eyes=eyes,
         )
 
         state = self.classifier.update(reading_with_motion)

@@ -12,6 +12,7 @@ class Reading:
     confidence: float
     motion_index: Optional[float] = None
     timestamp: Optional[float] = None
+    eyes: Optional[str] = None  # "OPEN" | "CLOSED" | "UNKNOWN" (Presage face landmarks), or None
 
 
 @runtime_checkable

@@ -10,6 +10,9 @@ Rules, in priority order (thresholds live in ClassifierConfig / CRADLEECHO_* env
                    own sleeping baseline
   ASLEEP           breathing in the sleeping range AND calm (motion < calm_motion), held steadily
                    for asleep_hold_s; before that the state is DROWSY
+Eyes (Presage face landmarks, when known) come first after the signal check: eyes OPEN means
+AWAKE; eyes CLOSED waives the breathing-range check (the range is tuned for infants, so an adult
+with closed eyes can still settle). Unknown eyes leave the rules above unchanged.
   DROWSY           settling: breathing in range, little movement, but not calm for long enough
                    (or movement between calm and restless)
 
@@ -140,16 +143,21 @@ class SleepStateClassifier:
 
         motion = reading.motion_index if reading.motion_index is not None else 0.0
 
+        if reading.eyes == "OPEN":
+            return STATE_AWAKE
+        eyes_closed = reading.eyes == "CLOSED"
+        in_band = eyes_closed or c.in_sleep_band(reading.brpm)
+
         if motion >= c.awake_motion:
             return STATE_AWAKE
         if motion >= c.restless_motion:
             # Restless = a sleeper stirring. Moving while breathing outside the sleeping range
             # is just someone who is awake (and must not trigger auto-soothe).
-            return STATE_RESTLESS if c.in_sleep_band(reading.brpm) else STATE_AWAKE
+            return STATE_RESTLESS if in_band else STATE_AWAKE
         # A breathing spike only counts against a real sleeping baseline.
         if baseline_brpm is not None and reading.brpm > baseline_brpm * c.spike_ratio:
             return STATE_RESTLESS
-        if not c.in_sleep_band(reading.brpm):
+        if not in_band:
             return STATE_AWAKE
         return STATE_ASLEEP if motion < c.calm_motion else STATE_DROWSY
 
