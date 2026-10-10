@@ -39,6 +39,7 @@ RUN apt-get update && apt-get install -y \
     libsmartspectra-dev=3.4.0-noble1 \
     libopencv-dev \
     alsa-utils \
+    libasound2-plugins \
     python3.12 \
     python3.12-venv \
     python-is-python3 \

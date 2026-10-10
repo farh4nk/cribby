@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 import shutil
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -28,6 +29,15 @@ DEFAULT_PLAYER_ARGS = [
     "1",
     "-",
 ]
+
+def _alsa_args(argv: list[str]) -> list[str]:
+    """With PULSE_SERVER set (Docker on a Mac playing through the host's PulseAudio), send aplay
+    to ALSA's "pulse" device instead of a sound card the container doesn't have."""
+    if argv and argv[0] == "aplay" and os.environ.get("PULSE_SERVER"):
+        return [argv[0], "-D", "pulse", *argv[1:]]
+    return argv
+
+
 FALLBACK_PLAYER_ARGS = [
     "ffplay",
     "-nodisp",
@@ -58,7 +68,7 @@ class TalkbackSession:
 
     def __init__(self, config: TalkbackConfig | None = None) -> None:
         self._config = config or TalkbackConfig()
-        self._player_argv = self._config.player_argv or DEFAULT_PLAYER_ARGS
+        self._player_argv = _alsa_args(self._config.player_argv or DEFAULT_PLAYER_ARGS)
         self._fallback_argv = self._config.fallback_argv or FALLBACK_PLAYER_ARGS
         self._session_timeout = self._config.session_timeout_s
         self._proc: Optional[asyncio.subprocess.Process] = None

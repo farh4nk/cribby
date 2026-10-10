@@ -54,6 +54,27 @@ Result over ~2 minutes with a person in frame: 30.0 frames/s to the bridge in ev
 `kFrameRateTooLow` (it fired constantly before), confidence 1.00, breathing 17-22/min, heart rate
 58-97 bpm. About 3-15 of the 30 frames/s are repeats; Presage still reported full confidence.
 
+## Teammate talks, Mac speakers play it (two-way audio "talk" on the Mac route)
+Docker on a Mac has no sound card, so the Mac daemon plays talk audio through PulseAudio on the Mac:
+1. `brew install pulseaudio`, then start it with network audio limited to this Mac and Docker:
+   ```
+   pulseaudio --daemonize=yes --exit-idle-time=-1 \
+     --load="module-native-protocol-tcp auth-ip-acl=127.0.0.1;192.168.65.0/24;172.16.0.0/12 auth-anonymous=0"
+   ```
+   (not started at login; run it again after a reboot). `pactl list short sinks` should show the speakers.
+2. Run the Mac container with `-e PULSE_SERVER=tcp:host.docker.internal:4713` (aplay then uses ALSA's
+   `pulse` device; the image ships `libasound2-plugins`).
+3. Publish the Mac over Tailscale HTTPS (browsers only allow the mic on HTTPS):
+   ```
+   tailscale serve --bg --https=443   http://127.0.0.1:3000
+   tailscale serve --bg --https=8443  http://127.0.0.1:8000
+   tailscale serve --bg --https=10000 http://127.0.0.1:8001
+   ```
+4. The teammate opens `https://<mac>.<tailnet>.ts.net/` and holds the talk button.
+
+Verified 2026-10-10: a tone sent over `wss://<mac>.ts.net:8443/ws/talk` started the talkback player in the
+container and played through PulseAudio. `next.config.ts` allows `*.ts.net` origins for `npm run dev`.
+
 ## Still open
 - With stable fps Presage now reports `kChestNotVisible`: it wants more of the chest in view
   (camera further back / tilted down). Heart rate needs a steady signal after that.
