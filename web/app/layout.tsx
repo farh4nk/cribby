@@ -4,6 +4,7 @@ import { AuthProvider } from "@/context/AuthProvider";
 import { NightShell } from "@/components/NightShell";
 import { OnboardingModal } from "@/components/OnboardingModal";
 import { TelemetryProvider } from "@/context/TelemetryProvider";
+import { VitalsAlertPopup } from "@/components/VitalsAlertPopup";
 import { PwaRegister } from "@/components/PwaRegister";
 import { APP_NAME } from "@/lib/config";
 import "./globals.css";
@@ -48,6 +49,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <AuthProvider>
           <TelemetryProvider>
             <NightShell>{children}</NightShell>
+            <VitalsAlertPopup />
           </TelemetryProvider>
           <OnboardingModal />
         </AuthProvider>
