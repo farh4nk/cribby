@@ -8,41 +8,16 @@ import { Header } from "@/components/Header";
 import { babyTitle, getBabyName, useBabyName } from "@/lib/babyName";
 import { analyticsUrl } from "@/lib/config";
 import { useAuth } from "@/context/AuthProvider";
-
-interface NightlySummaryResponse {
-  baby_name: string;
-  model_used?: string;
-  summary_bullets: string[];
-  metrics: {
-    bedtime?: string;
-    wake_time?: string;
-    window_start?: string;
-    window_end?: string;
-    scheduled_hours: number;
-    sleep_hours: number;
-    sleep_efficiency_percent: number;
-    avg_brpm: number;
-    avg_bpm: number;
-    restless_spikes_count: number;
-    soothe_interventions_count: number;
-    avg_soothe_resolve_seconds: number;
-  };
-}
-
-interface TimelineEntry {
-  time: string;
-  state: string;
-  breathing_rate: number;
-  heart_rate: number;
-  motion_index: number;
-}
-
-interface TrendEntry {
-  time: string;
-  breathing_rate: number;
-  heart_rate: number;
-  state: string;
-}
+import {
+  NightlySummaryResponse,
+  TimelineEntry,
+  TrendEntry,
+  getDashboardCacheKey,
+  getCachedDashboardData,
+  setCachedDashboardData,
+  isDashboardCacheFresh,
+  formatCacheAge,
+} from "@/lib/dashboardCache";
 
 const STATE_COLORS: Record<string, { bg: string; text: string; label: string }> = {
   ASLEEP: { bg: "bg-indigo-400/80", text: "text-indigo-300", label: "Asleep" },
@@ -76,32 +51,75 @@ export default function DashboardPage() {
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
   const [trend, setTrend] = useState<TrendEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isRevalidating, setIsRevalidating] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editModalOpen, setEditModalOpen] = useState(false);
 
-  const loadDashboardData = useCallback(async (bTime = bedtime, wTime = wakeTime) => {
-    setLoading(true);
+  const loadDashboardData = useCallback(async (bTime = bedtime, wTime = wakeTime, force = false) => {
+    const bName = babyTitle(getBabyName());
+    const cacheKey = getDashboardCacheKey(bName, bTime, wTime);
+    const cached = getCachedDashboardData(cacheKey);
+
+    // 1. Instant Cache Hit: Show cached telemetry without blocking user
+    if (cached && !force) {
+      setSummary(cached.summary);
+      setTimeline(cached.timeline);
+      setTrend(cached.trend);
+      setLastUpdated(cached.fetchedAt);
+      setLoading(false);
+
+      // If fresh within 5-minute TTL, skip remote network calls entirely
+      if (isDashboardCacheFresh(cached)) {
+        return;
+      }
+      setIsRevalidating(true);
+    } else {
+      setLoading(true);
+    }
+
     setError(null);
     try {
       const [sumRes, timeRes, trendRes] = await Promise.all([
-        fetch(`${analyticsUrl()}/api/nightly-summary?baby_name=${encodeURIComponent(babyTitle(getBabyName()))}&bedtime=${bTime}&wake_time=${wTime}`),
+        fetch(`${analyticsUrl()}/api/nightly-summary?baby_name=${encodeURIComponent(bName)}&bedtime=${bTime}&wake_time=${wTime}`),
         fetch(`${analyticsUrl()}/api/sleep-timeline?bedtime=${bTime}&wake_time=${wTime}&limit=120`),
         fetch(`${analyticsUrl()}/api/vitals-trend?bedtime=${bTime}&wake_time=${wTime}&limit=60`),
       ]);
 
-      if (sumRes.ok) setSummary(await sumRes.json());
+      let newSummary = cached?.summary ?? null;
+      let newTimeline = cached?.timeline ?? [];
+      let newTrend = cached?.trend ?? [];
+
+      if (sumRes.ok) newSummary = await sumRes.json();
       if (timeRes.ok) {
         const timeData = await timeRes.json();
-        setTimeline(timeData.timeline || []);
+        newTimeline = timeData.timeline || [];
       }
       if (trendRes.ok) {
         const trendData = await trendRes.json();
-        setTrend(trendData.trend || []);
+        newTrend = trendData.trend || [];
       }
+
+      const now = Date.now();
+      setSummary(newSummary);
+      setTimeline(newTimeline);
+      setTrend(newTrend);
+      setLastUpdated(now);
+
+      // Store in memory & sessionStorage
+      setCachedDashboardData(cacheKey, {
+        summary: newSummary,
+        timeline: newTimeline,
+        trend: newTrend,
+        fetchedAt: now,
+      });
     } catch {
-      setError("Unable to connect to Tiger Data analytics API");
+      if (!cached) {
+        setError("Unable to connect to Tiger Data analytics API");
+      }
     } finally {
       setLoading(false);
+      setIsRevalidating(false);
     }
   }, [bedtime, wakeTime]);
 
@@ -126,27 +144,59 @@ export default function DashboardPage() {
     <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-5 sm:px-8">
       <Header />
 
-      {/* Hero title + Edit Profile & Schedule Trigger */}
+      {/* Hero title + Controls (Refresh + Edit Profile & Schedule Trigger) */}
       <section className="mt-4 flex flex-wrap items-end justify-between gap-4">
         <div>
           <span className="text-xs font-semibold uppercase tracking-wider text-tone">Night Intelligence</span>
           <h1 className="mt-1 font-display text-4xl text-ink [font-variation-settings:'SOFT'_100,'opsz'_144] sm:text-5xl">
             {title}’s Sleep Report
           </h1>
-          <p className="mt-2 text-sm text-ink-dim">
-            Scheduled night: <span className="font-medium text-ink">{formatTime12(bedtime)} – {formatTime12(wakeTime)}</span> · Scoped to Tiger Data Timescale vitals & Gemini sleep intelligence
+          <p className="mt-2 text-sm text-ink-dim flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span>
+              Scheduled night: <span className="font-medium text-ink">{formatTime12(bedtime)} – {formatTime12(wakeTime)}</span> · Scoped to Tiger Data Timescale vitals & Gemini sleep intelligence
+            </span>
+            {lastUpdated && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/5 px-2.5 py-0.5 text-xs text-tone/90 ring-1 ring-white/10">
+                <span className="h-1.5 w-1.5 rounded-full bg-tone" />
+                Cached · {formatCacheAge(lastUpdated)}
+              </span>
+            )}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setEditModalOpen(true)}
-          className="flex items-center gap-2 rounded-full bg-white/5 px-4 py-2.5 text-xs font-medium text-ink ring-1 ring-white/10 transition hover:bg-white/10 hover:text-tone cursor-pointer"
-        >
-          <svg className="h-4 w-4 text-tone" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-          </svg>
-          <span>Edit Baby Profile & Schedule</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => loadDashboardData(bedtime, wakeTime, true)}
+            disabled={loading || isRevalidating}
+            className="flex items-center gap-1.5 rounded-full bg-white/5 px-3 py-2 text-xs font-medium text-ink ring-1 ring-white/10 transition hover:bg-white/10 hover:text-tone cursor-pointer disabled:opacity-50"
+            title="Sync fresh telemetry from Tiger Data"
+          >
+            <svg
+              className={`h-3.5 w-3.5 text-tone ${isRevalidating ? "animate-spin" : ""}`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+              />
+            </svg>
+            <span>{isRevalidating ? "Syncing…" : "Refresh"}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setEditModalOpen(true)}
+            className="flex items-center gap-2 rounded-full bg-white/5 px-4 py-2 text-xs font-medium text-ink ring-1 ring-white/10 transition hover:bg-white/10 hover:text-tone cursor-pointer"
+          >
+            <svg className="h-4 w-4 text-tone" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+            </svg>
+            <span>Edit Baby Profile & Schedule</span>
+          </button>
+        </div>
       </section>
 
       {loading && (
@@ -379,7 +429,7 @@ export default function DashboardPage() {
         onSaved={(newB, newW) => {
           setBedtime(newB);
           setWakeTime(newW);
-          loadDashboardData(newB, newW);
+          loadDashboardData(newB, newW, true);
         }}
       />
 
