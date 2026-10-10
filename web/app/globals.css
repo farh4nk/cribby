@@ -57,9 +57,7 @@ body {
   background: var(--bg-0);
   color: var(--ink);
   font-family: var(--font-gontserrat), system-ui, sans-serif;
-  font-weight: 300;
-  /* Only the Light file is loaded: bold/semibold classes stay Light instead of a faked bold. */
-  font-synthesis-weight: none;
+  font-weight: 300; /* Gontserrat Light by default; heavier weights where classes ask for them */
   -webkit-font-smoothing: antialiased;
 }
 

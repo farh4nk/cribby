@@ -9,11 +9,16 @@ import { PwaRegister } from "@/components/PwaRegister";
 import { APP_NAME } from "@/lib/config";
 import "./globals.css";
 
-// The one typeface across the site: Gontserrat Light.
+// One typeface across the site: Gontserrat. Light is the base weight; Medium and SemiBold back the
+// font-medium / font-semibold classes, Bold anything the browser bolds by default.
 const gontserrat = localFont({
-  src: "./fonts/Gontserrat-Light.ttf",
-  weight: "300",
-  style: "normal",
+  src: [
+    { path: "./fonts/Gontserrat-Light.ttf", weight: "300", style: "normal" },
+    { path: "./fonts/Gontserrat-LightItalic.ttf", weight: "300", style: "italic" },
+    { path: "./fonts/Gontserrat-Medium.ttf", weight: "500", style: "normal" },
+    { path: "./fonts/Gontserrat-SemiBold.ttf", weight: "600", style: "normal" },
+    { path: "./fonts/Gontserrat-Bold.ttf", weight: "700", style: "normal" },
+  ],
   variable: "--font-gontserrat",
   display: "swap",
 });
