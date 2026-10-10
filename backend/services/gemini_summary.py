@@ -102,12 +102,12 @@ def fetch_nightly_metrics(
                     COUNT(CASE WHEN state = 'ASLEEP' THEN 1 END) as asleep_samples,
                     COUNT(CASE WHEN state = 'RESTLESS' THEN 1 END) as restless_samples,
                     COUNT(CASE WHEN state = 'AWAKE' THEN 1 END) as awake_samples,
-                    AVG(breathing_rate) as avg_brpm,
-                    MIN(breathing_rate) as min_brpm,
-                    MAX(breathing_rate) as max_brpm,
-                    AVG(heart_rate) as avg_bpm,
-                    MIN(heart_rate) as min_bpm,
-                    MAX(heart_rate) as max_bpm,
+                    AVG(CASE WHEN breathing_rate > 0 THEN breathing_rate END) as avg_brpm,
+                    MIN(CASE WHEN breathing_rate > 0 THEN breathing_rate END) as min_brpm,
+                    MAX(CASE WHEN breathing_rate > 0 THEN breathing_rate END) as max_brpm,
+                    AVG(CASE WHEN heart_rate > 0 THEN heart_rate END) as avg_bpm,
+                    MIN(CASE WHEN heart_rate > 0 THEN heart_rate END) as min_bpm,
+                    MAX(CASE WHEN heart_rate > 0 THEN heart_rate END) as max_bpm,
                     MIN(time) as session_start,
                     MAX(time) as session_end
                 FROM baby_vitals
@@ -118,12 +118,12 @@ def fetch_nightly_metrics(
                     COUNT(CASE WHEN state = 'ASLEEP' THEN 1 END) as asleep_samples,
                     COUNT(CASE WHEN state = 'RESTLESS' THEN 1 END) as restless_samples,
                     COUNT(CASE WHEN state = 'AWAKE' THEN 1 END) as awake_samples,
-                    AVG(breathing_rate) as avg_brpm,
-                    MIN(breathing_rate) as min_brpm,
-                    MAX(breathing_rate) as max_brpm,
-                    AVG(heart_rate) as avg_bpm,
-                    MIN(heart_rate) as min_bpm,
-                    MAX(heart_rate) as max_bpm,
+                    AVG(CASE WHEN breathing_rate > 0 THEN breathing_rate END) as avg_brpm,
+                    MIN(CASE WHEN breathing_rate > 0 THEN breathing_rate END) as min_brpm,
+                    MAX(CASE WHEN breathing_rate > 0 THEN breathing_rate END) as max_brpm,
+                    AVG(CASE WHEN heart_rate > 0 THEN heart_rate END) as avg_bpm,
+                    MIN(CASE WHEN heart_rate > 0 THEN heart_rate END) as min_bpm,
+                    MAX(CASE WHEN heart_rate > 0 THEN heart_rate END) as max_bpm,
                     MIN(time) as session_start,
                     MAX(time) as session_end
                 FROM baby_vitals
@@ -134,8 +134,8 @@ def fetch_nightly_metrics(
             vitals_row = cur.fetchone()
 
             # Fallback if specific window had no samples (e.g. dev testing at noon with older seed data)
-            if not vitals_row or not vitals_row["total_samples"]:
-                fallback_start = latest_time - datetime.timedelta(hours=8)
+            if not vitals_row or not vitals_row["total_samples"] or not vitals_row["avg_brpm"]:
+                fallback_start = latest_time - datetime.timedelta(hours=11)
                 cur.execute(
                     """
                     SELECT 
@@ -143,12 +143,12 @@ def fetch_nightly_metrics(
                         COUNT(CASE WHEN state = 'ASLEEP' THEN 1 END) as asleep_samples,
                         COUNT(CASE WHEN state = 'RESTLESS' THEN 1 END) as restless_samples,
                         COUNT(CASE WHEN state = 'AWAKE' THEN 1 END) as awake_samples,
-                        AVG(breathing_rate) as avg_brpm,
-                        MIN(breathing_rate) as min_brpm,
-                        MAX(breathing_rate) as max_brpm,
-                        AVG(heart_rate) as avg_bpm,
-                        MIN(heart_rate) as min_bpm,
-                        MAX(heart_rate) as max_bpm,
+                        AVG(CASE WHEN breathing_rate > 0 THEN breathing_rate END) as avg_brpm,
+                        MIN(CASE WHEN breathing_rate > 0 THEN breathing_rate END) as min_brpm,
+                        MAX(CASE WHEN breathing_rate > 0 THEN breathing_rate END) as max_brpm,
+                        AVG(CASE WHEN heart_rate > 0 THEN heart_rate END) as avg_bpm,
+                        MIN(CASE WHEN heart_rate > 0 THEN heart_rate END) as min_bpm,
+                        MAX(CASE WHEN heart_rate > 0 THEN heart_rate END) as max_bpm,
                         MIN(time) as session_start,
                         MAX(time) as session_end
                     FROM baby_vitals
@@ -159,12 +159,12 @@ def fetch_nightly_metrics(
                         COUNT(CASE WHEN state = 'ASLEEP' THEN 1 END) as asleep_samples,
                         COUNT(CASE WHEN state = 'RESTLESS' THEN 1 END) as restless_samples,
                         COUNT(CASE WHEN state = 'AWAKE' THEN 1 END) as awake_samples,
-                        AVG(breathing_rate) as avg_brpm,
-                        MIN(breathing_rate) as min_brpm,
-                        MAX(breathing_rate) as max_brpm,
-                        AVG(heart_rate) as avg_bpm,
-                        MIN(heart_rate) as min_bpm,
-                        MAX(heart_rate) as max_bpm,
+                        AVG(CASE WHEN breathing_rate > 0 THEN breathing_rate END) as avg_brpm,
+                        MIN(CASE WHEN breathing_rate > 0 THEN breathing_rate END) as min_brpm,
+                        MAX(CASE WHEN breathing_rate > 0 THEN breathing_rate END) as max_brpm,
+                        AVG(CASE WHEN heart_rate > 0 THEN heart_rate END) as avg_bpm,
+                        MIN(CASE WHEN heart_rate > 0 THEN heart_rate END) as min_bpm,
+                        MAX(CASE WHEN heart_rate > 0 THEN heart_rate END) as max_bpm,
                         MIN(time) as session_start,
                         MAX(time) as session_end
                     FROM baby_vitals
@@ -205,7 +205,8 @@ def fetch_nightly_metrics(
     if scheduled_hours <= 0:
         scheduled_hours = 8.0
 
-    sleep_fraction = (asleep_samples / total_samples) if total_samples > 0 else 0.95
+    valid_samples = (asleep_samples + restless_samples + awake_samples) or total_samples
+    sleep_fraction = (asleep_samples / valid_samples) if valid_samples > 0 else 0.95
     session_start = vitals_row["session_start"]
     session_end = vitals_row["session_end"]
     if session_start and session_end:
