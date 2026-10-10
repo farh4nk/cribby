@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import Image from "next/image";
 import { useAuth } from "@/context/AuthProvider";
+import { Avatar } from "./Avatar";
 import { EditBabyProfileModal } from "./EditBabyProfileModal";
 
 export function UserMenu() {
@@ -45,15 +45,6 @@ export function UserMenu() {
     );
   }
 
-  const initials = user.name
-    ? user.name
-        .split(" ")
-        .map((p) => p[0])
-        .join("")
-        .toUpperCase()
-        .slice(0, 2)
-    : "P";
-
   return (
     <div className="relative">
       <button
@@ -63,20 +54,7 @@ export function UserMenu() {
         aria-expanded={menuOpen}
         aria-haspopup="dialog"
       >
-        {user.avatar_url ? (
-          <Image
-            src={user.avatar_url}
-            alt={user.name}
-            width={24}
-            height={24}
-            className="h-6 w-6 rounded-full object-cover"
-            unoptimized
-          />
-        ) : (
-          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-tone/20 text-[10px] font-semibold text-tone">
-            {initials}
-          </span>
-        )}
+        <Avatar src={user.avatar_url} name={user.name} size={24} />
         <div className="flex flex-col text-left">
           <span className="max-w-[100px] truncate font-medium text-ink leading-tight">
             {user.name.split(" ")[0]}
@@ -102,20 +80,7 @@ export function UserMenu() {
           >
             {/* User Profile Header */}
             <div className="flex items-center gap-3 border-b border-white/10 pb-3">
-              {user.avatar_url ? (
-                <Image
-                  src={user.avatar_url}
-                  alt={user.name}
-                  width={40}
-                  height={40}
-                  className="h-10 w-10 rounded-full object-cover ring-1 ring-white/20"
-                  unoptimized
-                />
-              ) : (
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-tone/20 text-sm font-semibold text-tone">
-                  {initials}
-                </div>
-              )}
+              <Avatar src={user.avatar_url} name={user.name} size={40} className="ring-1 ring-white/20" />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-ink">{user.name}</p>
                 <p className="truncate text-xs text-ink-dim">{user.email}</p>
