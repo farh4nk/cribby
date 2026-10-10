@@ -35,20 +35,20 @@ class TelemetryIngestionWorker:
     def parse_payload(self, raw_data: str) -> Tuple[str, str, float, float, float, float, bool] | None:
         """Parses and validates telemetry JSON packet against AGENTS.md contract.
         
-        Automatically determines whether the reading is real or synthetic:
-        - simulated == True: synthetic (mock/simulation source)
+        Simulated mode is never recorded. Other readings are tagged:
         - camera.live == False: synthetic (synthetic placeholder camera feed)
-        - camera.live == True and not simulated: real (live hardware camera + Presage sensor)
+        - camera.live == True: real (live hardware camera + Presage sensor)
         """
         try:
             payload = json.loads(raw_data)
             # The camera was switched off: there is nothing to record (would read as signal loss).
             if (payload.get("camera") or {}).get("enabled") is False:
                 return None
+            # Simulated mode (the daemon's mock source): demo numbers, not a measurement.
+            if payload.get("simulated") is True:
+                return None
 
-            is_simulated = bool(payload.get("simulated", False))
-            cam_live = bool((payload.get("camera") or {}).get("live", True))
-            is_real = (not is_simulated) and cam_live
+            is_real = bool((payload.get("camera") or {}).get("live", True))
 
             # Contract: timestamp, state, vitals: {brpm, bpm, confidence}, motion_index
             ts = payload.get("timestamp") or datetime.datetime.now(datetime.timezone.utc).isoformat()

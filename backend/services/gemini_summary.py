@@ -7,12 +7,16 @@ and prompts Gemini to produce a concise, reassuring 3-bullet morning report for 
 
 import os
 import datetime
+from zoneinfo import ZoneInfo
 from typing import Dict, Any, List, Optional, Tuple
 from google import genai
 from dotenv import load_dotenv
 from backend.db.connection import get_db_connection, is_postgres
 
 load_dotenv()
+
+# Bedtime and wake time are the parent's local clock; the database stores UTC.
+LOCAL_TZ = ZoneInfo(os.getenv("CRIBBY_TZ", "America/New_York"))
 
 # Prioritized list of Gemini models to support fast response and high availability
 GEMINI_MODELS = [
@@ -51,8 +55,10 @@ def get_night_window(
     """
     Computes (window_start, window_end) for the most recent night between parent-set bedtime and wake time.
     Handles the overnight midnight rollover (e.g., 20:00 to 07:00).
+    Times are read in LOCAL_TZ (CRIBBY_TZ, default America/New_York); the window is returned in UTC.
     """
     as_of_dt = parse_dt_safe(as_of) if as_of is not None else datetime.datetime.now(datetime.timezone.utc)
+    as_of_dt = as_of_dt.astimezone(LOCAL_TZ)
 
     b_hour, b_min = parse_time_str(bedtime_str)
     w_hour, w_min = parse_time_str(wake_str)
@@ -69,10 +75,11 @@ def get_night_window(
         end_date = as_of_dt.date()
         start_date = end_date - datetime.timedelta(days=1)
 
-    window_start = datetime.datetime.combine(start_date, datetime.time(b_hour, b_min), tzinfo=as_of_dt.tzinfo)
-    window_end = datetime.datetime.combine(end_date, datetime.time(w_hour, w_min), tzinfo=as_of_dt.tzinfo)
+    window_start = datetime.datetime.combine(start_date, datetime.time(b_hour, b_min), tzinfo=LOCAL_TZ)
+    window_end = datetime.datetime.combine(end_date, datetime.time(w_hour, w_min), tzinfo=LOCAL_TZ)
 
-    return window_start, window_end
+    utc = datetime.timezone.utc
+    return window_start.astimezone(utc), window_end.astimezone(utc)
 
 def fetch_nightly_metrics(
     bedtime: str = "20:00",

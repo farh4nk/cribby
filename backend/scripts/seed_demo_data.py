@@ -1,7 +1,8 @@
 """
 Comprehensive overnight telemetry and soothe events seeder for Cribby (Task 4.1/4.2).
 Seeds BOTH Tiger Data PostgreSQL (Timescale) and local SQLite fallbacks.
-Generates full overnight sleep sessions with:
+Only earlier seed rows (is_real = false) are replaced; real readings are never deleted.
+Generates the most recent completed night (never future rows) with:
 - Calm restorative sleep (22-26 BrPM, 104-114 BPM)
 - Bedtime/morning drowsy wind-down transitions (26-28 BrPM, 116-122 BPM)
 - 2 distinct restlessness stirring episodes (32-36 BrPM, 126-135 BPM)
@@ -47,14 +48,14 @@ def generate_night_session(
         {
             "triggered_at": restless_1_soothe.isoformat(),
             "resolved_at": restless_1_end.isoformat(),
-            "voice_snippet_used": "Shhh, Mommy and Daddy love you.",
+            "voice_snippet_used": "Lullaby",
             "was_successful": True,
             "is_real": False,
         },
         {
             "triggered_at": restless_2_soothe.isoformat(),
             "resolved_at": restless_2_end.isoformat(),
-            "voice_snippet_used": "Go to sleep, sweet dreams.",
+            "voice_snippet_used": "Lullaby",
             "was_successful": True,
             "is_real": False,
         }
@@ -153,9 +154,9 @@ def seed_sqlite_database(db_path: str, vitals: List[Tuple], soothe_events: List[
         );
         """)
 
-        # Clear existing data
-        cur.execute("DELETE FROM baby_vitals;")
-        cur.execute("DELETE FROM soothe_events;")
+        # Replace only earlier seed data; real readings stay.
+        cur.execute("DELETE FROM baby_vitals WHERE is_real = 0;")
+        cur.execute("DELETE FROM soothe_events WHERE is_real = 0;")
 
         # Insert vitals
         cur.executemany(
@@ -205,9 +206,9 @@ def seed_postgres_database(vitals: List[Tuple], soothe_events: List[Dict]):
             except Exception:
                 pass
 
-            # Clear old corrupted/zero rows
-            cur.execute("DELETE FROM baby_vitals;")
-            cur.execute("DELETE FROM soothe_events;")
+            # Replace only earlier seed data; real readings stay.
+            cur.execute("DELETE FROM baby_vitals WHERE is_real = FALSE;")
+            cur.execute("DELETE FROM soothe_events WHERE is_real = FALSE;")
 
             # Insert vitals in batch
             cur.executemany(
@@ -236,24 +237,22 @@ def seed_postgres_database(vitals: List[Tuple], soothe_events: List[Dict]):
         print(f"     [WARN] Could not seed Tiger Data directly: {e}")
 
 
+def last_completed_night(bedtime: str, wake_time: str, now: datetime.datetime) -> datetime.datetime:
+    """An anchor inside the most recent night that has already ended, so no seeded row is in the future."""
+    _, end = get_night_window(bedtime, wake_time, as_of=now)
+    return now if end <= now else now - datetime.timedelta(days=1)
+
+
 def seed_all_databases(bedtime: str = "20:00", wake_time: str = "07:00"):
-    """Seeds all database tiers with both the most recent completed night and the current session."""
+    """Seeds one completed night (sample data for the dashboard) into every database tier."""
     now = datetime.datetime.now(datetime.timezone.utc)
     print("============================================================")
     print("Cribby Telemetry Seeder: Populating Database Tiers")
     print("============================================================")
 
-    # Night 1: Completed night (anchor: now - 24h)
-    yesterday_anchor = now - datetime.timedelta(days=1)
-    vitals_y, soothe_y = generate_night_session(yesterday_anchor, bedtime, wake_time)
+    all_vitals, all_soothe = generate_night_session(last_completed_night(bedtime, wake_time, now), bedtime, wake_time)
 
-    # Night 2: Current night session (anchor: now)
-    vitals_today, soothe_today = generate_night_session(now, bedtime, wake_time)
-
-    all_vitals = vitals_y + vitals_today
-    all_soothe = soothe_y + soothe_today
-
-    print(f"Generated {len(all_vitals)} total biometric readings across 2 full night sessions.")
+    print(f"Generated {len(all_vitals)} biometric readings for the last completed night.")
     print(f"Generated {len(all_soothe)} auto-soothe intervention events.")
 
     # 1. Seed Tiger Data Cloud PostgreSQL

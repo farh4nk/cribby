@@ -25,10 +25,8 @@ def test_reading_without_flag_is_recorded_as_real():
     assert parsed[6] is True
 
 
-def test_simulated_reading_is_recorded_and_flagged_synthetic():
-    parsed = TelemetryIngestionWorker().parse_payload(json.dumps({**BASE, "simulated": True}))
-    assert parsed is not None
-    assert parsed[6] is False  # is_real is False
+def test_simulated_reading_is_skipped():
+    assert TelemetryIngestionWorker().parse_payload(json.dumps({**BASE, "simulated": True})) is None
 
 
 def test_synthetic_camera_feed_is_flagged_synthetic():

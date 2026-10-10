@@ -106,14 +106,21 @@ def ask_nightly_qa(query: NightlyQAQuery):
         raise HTTPException(status_code=500, detail=str(e))
 
 def downsample_rows(rows: List[Dict[str, Any]], limit: int) -> List[Dict[str, Any]]:
-    """Downsamples a list of time-series dictionaries evenly across the entire duration."""
+    """Downsamples a list of time-series dictionaries evenly across the entire duration.
+    Every state change is kept (the rows on both sides of it), so a short Restless or Awake
+    episode stays on the timeline even when it falls between the evenly spaced samples.
+    """
     if not rows:
         return []
     n = len(rows)
     if n <= limit:
         return rows
     step = (n - 1) / (limit - 1)
-    return [rows[int(round(i * step))] for i in range(limit)]
+    keep = {int(round(i * step)) for i in range(limit)}
+    for i in range(1, n):
+        if rows[i].get("state") != rows[i - 1].get("state"):
+            keep.update((i - 1, i))
+    return [rows[i] for i in sorted(keep)]
 
 @app.get("/api/sleep-timeline")
 def get_sleep_timeline(
