@@ -3,13 +3,12 @@
 import { useState } from "react";
 import Image from "next/image";
 import { useAuth } from "@/context/AuthProvider";
+import { EditBabyProfileModal } from "./EditBabyProfileModal";
 
 export function UserMenu() {
-  const { user, baby, isLoading, login, logout, updateBaby } = useAuth();
+  const { user, baby, isLoading, login, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [editingBaby, setEditingBaby] = useState(false);
-  const [babyNameInput, setBabyNameInput] = useState("");
-  const [isSaving, setIsSaving] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
 
   if (isLoading) {
     return <div className="h-8 w-24 animate-pulse rounded-full bg-white/5" />;
@@ -20,7 +19,7 @@ export function UserMenu() {
       <button
         type="button"
         onClick={login}
-        className="flex items-center gap-2 rounded-full bg-white/10 px-3.5 py-1.5 text-xs font-medium text-ink ring-1 ring-white/15 transition hover:bg-white/15 hover:ring-white/25"
+        className="flex items-center gap-2 rounded-full bg-white/10 px-3.5 py-1.5 text-xs font-medium text-ink ring-1 ring-white/15 transition hover:bg-white/15 hover:ring-white/25 cursor-pointer"
         title="Sign in with your Google account to sync parent profile and baby vitals with Tiger Data"
       >
         <svg className="h-3.5 w-3.5" viewBox="0 0 24 24">
@@ -55,24 +54,12 @@ export function UserMenu() {
         .slice(0, 2)
     : "P";
 
-  const handleSaveBabyName = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!babyNameInput.trim()) return;
-    setIsSaving(true);
-    await updateBaby({ name: babyNameInput.trim() });
-    setIsSaving(false);
-    setEditingBaby(false);
-  };
-
   return (
     <div className="relative">
       <button
         type="button"
-        onClick={() => {
-          setMenuOpen((prev) => !prev);
-          if (baby?.name) setBabyNameInput(baby.name);
-        }}
-        className="flex items-center gap-2 rounded-full bg-white/5 py-1 pl-1 pr-3 text-xs text-ink ring-1 ring-white/10 transition hover:bg-white/10"
+        onClick={() => setMenuOpen((prev) => !prev)}
+        className="flex items-center gap-2 rounded-full bg-white/5 py-1 pl-1 pr-3 text-xs text-ink ring-1 ring-white/10 transition hover:bg-white/10 cursor-pointer"
         aria-expanded={menuOpen}
         aria-haspopup="dialog"
       >
@@ -106,10 +93,7 @@ export function UserMenu() {
             type="button"
             aria-label="Close user menu"
             className="fixed inset-0 z-40 cursor-default"
-            onClick={() => {
-              setMenuOpen(false);
-              setEditingBaby(false);
-            }}
+            onClick={() => setMenuOpen(false)}
           />
           <div
             role="dialog"
@@ -142,62 +126,30 @@ export function UserMenu() {
             <div className="my-3 rounded-xl bg-white/5 p-3 ring-1 ring-white/5">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-medium text-tone">Baby Profile (Tiger Data)</span>
-                {!editingBaby && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setBabyNameInput(baby?.name || "");
-                      setEditingBaby(true);
-                    }}
-                    className="text-[11px] text-ink-dim hover:text-ink hover:underline"
-                  >
-                    Edit
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setEditModalOpen(true);
+                  }}
+                  className="text-[11px] text-ink-dim hover:text-ink hover:underline cursor-pointer"
+                >
+                  Edit Profile & Schedule
+                </button>
               </div>
 
-              {editingBaby ? (
-                <form onSubmit={handleSaveBabyName} className="mt-2.5 flex flex-col gap-2">
-                  <input
-                    type="text"
-                    value={babyNameInput}
-                    onChange={(e) => setBabyNameInput(e.target.value)}
-                    placeholder="Baby’s name"
-                    autoFocus
-                    maxLength={30}
-                    className="rounded-lg bg-black/40 px-2.5 py-1 text-xs text-ink ring-1 ring-white/10 focus:outline-none focus:ring-tone/50"
-                  />
-                  <div className="flex justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setEditingBaby(false)}
-                      className="rounded-lg px-2 py-0.5 text-[11px] text-ink-dim hover:text-ink"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={isSaving || !babyNameInput.trim()}
-                      className="rounded-lg bg-tone px-2.5 py-0.5 text-[11px] font-semibold text-[#0a0b15] disabled:opacity-50"
-                    >
-                      {isSaving ? "Saving…" : "Save"}
-                    </button>
-                  </div>
-                </form>
-              ) : (
-                <div className="mt-1.5 flex flex-col gap-1 text-xs">
-                  <div className="flex justify-between text-ink">
-                    <span className="text-ink-dim">Name:</span>
-                    <span className="font-medium">{baby?.name || "Your baby"}</span>
-                  </div>
-                  <div className="flex justify-between text-ink">
-                    <span className="text-ink-dim">Bedtime schedule:</span>
-                    <span className="font-mono text-[11px] text-ink-dim">
-                      {baby?.bedtime || "20:00"} – {baby?.wake_time || "07:00"}
-                    </span>
-                  </div>
+              <div className="mt-2 flex flex-col gap-1 text-xs">
+                <div className="flex justify-between text-ink">
+                  <span className="text-ink-dim">Name:</span>
+                  <span className="font-medium">{baby?.name || "Your baby"}</span>
                 </div>
-              )}
+                <div className="flex justify-between text-ink">
+                  <span className="text-ink-dim">Bedtime schedule:</span>
+                  <span className="font-mono text-[11px] text-ink-dim">
+                    {baby?.bedtime || "20:00"} – {baby?.wake_time || "07:00"}
+                  </span>
+                </div>
+              </div>
             </div>
 
             {/* Sync Badge */}
@@ -222,6 +174,12 @@ export function UserMenu() {
           </div>
         </>
       )}
+
+      {/* Edit Baby Profile & Schedule Modal */}
+      <EditBabyProfileModal
+        isOpen={editModalOpen}
+        onClose={() => setEditModalOpen(false)}
+      />
     </div>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { Disclaimer } from "@/components/Disclaimer";
+import { EditBabyProfileModal } from "@/components/EditBabyProfileModal";
 import { GeminiNightQA } from "@/components/GeminiNightQA";
 import { Header } from "@/components/Header";
 import { babyTitle, getBabyName, useBabyName } from "@/lib/babyName";
@@ -68,7 +69,7 @@ function formatTime12(timeStr: string): string {
 
 export default function DashboardPage() {
   const title = babyTitle(useBabyName() ?? "");
-  const { baby, updateBaby } = useAuth();
+  const { baby } = useAuth();
   const [bedtime, setBedtime] = useState(baby?.bedtime || "20:00");
   const [wakeTime, setWakeTime] = useState(baby?.wake_time || "07:00");
   const [summary, setSummary] = useState<NightlySummaryResponse | null>(null);
@@ -76,6 +77,7 @@ export default function DashboardPage() {
   const [trend, setTrend] = useState<TrendEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [editModalOpen, setEditModalOpen] = useState(false);
 
   const loadDashboardData = useCallback(async (bTime = bedtime, wTime = wakeTime) => {
     setLoading(true);
@@ -124,109 +126,27 @@ export default function DashboardPage() {
     <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-5 sm:px-8">
       <Header />
 
-      {/* Hero title */}
-      <section className="mt-4">
-        <span className="text-xs font-semibold uppercase tracking-wider text-tone">Night Intelligence</span>
-        <h1 className="mt-1 font-display text-4xl text-ink [font-variation-settings:'SOFT'_100,'opsz'_144] sm:text-5xl">
-          {title}’s Sleep Report
-        </h1>
-        <p className="mt-2 text-sm text-ink-dim">
-          Tiger Data time-series vitals scoped to your scheduled bedtime window & Gemini 3.5 sleep analytics
-        </p>
-      </section>
-
-      {/* Bedtime Window Controls Card */}
-      <section className="mt-8 rounded-3xl bg-white/5 p-6 ring-1 ring-white/10 sm:p-7">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold text-tone">🌙 Bedtime & Wake Schedule</span>
-              <span className="rounded-full bg-tone/15 px-2.5 py-0.5 text-[11px] font-medium text-tone">
-                Parent Configured
-              </span>
-            </div>
-            <p className="mt-1 text-xs text-ink-dim">
-              Set {title}’s scheduled crib hours. Telemetry queries, hypnogram, and Gemini summaries scope to this exact window.
-            </p>
-          </div>
-
-          {/* Quick preset buttons */}
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-ink-faint">Presets:</span>
-            {[
-              { label: "8 PM – 7 AM", b: "20:00", w: "07:00" },
-              { label: "7:30 PM – 6:30 AM", b: "19:30", w: "06:30" },
-              { label: "8:30 PM – 6:30 AM", b: "20:30", w: "06:30" },
-              { label: "9 PM – 7:30 AM", b: "21:00", w: "07:30" },
-            ].map((p) => (
-              <button
-                key={p.label}
-                type="button"
-                onClick={() => {
-                  setBedtime(p.b);
-                  setWakeTime(p.w);
-                  loadDashboardData(p.b, p.w);
-                }}
-                className={`rounded-full px-3 py-1 text-xs transition ${
-                  bedtime === p.b && wakeTime === p.w
-                    ? "bg-tone text-[#0a0b15] font-semibold"
-                    : "bg-white/5 text-ink-dim ring-1 ring-white/10 hover:bg-white/10 hover:text-ink"
-                }`}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
+      {/* Hero title + Edit Profile & Schedule Trigger */}
+      <section className="mt-4 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <span className="text-xs font-semibold uppercase tracking-wider text-tone">Night Intelligence</span>
+          <h1 className="mt-1 font-display text-4xl text-ink [font-variation-settings:'SOFT'_100,'opsz'_144] sm:text-5xl">
+            {title}’s Sleep Report
+          </h1>
+          <p className="mt-2 text-sm text-ink-dim">
+            Scheduled night: <span className="font-medium text-ink">{formatTime12(bedtime)} – {formatTime12(wakeTime)}</span> · Scoped to Tiger Data Timescale vitals & Gemini sleep intelligence
+          </p>
         </div>
-
-        {/* Schedule Inputs */}
-        <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div className="rounded-2xl bg-white/5 p-3.5 ring-1 ring-white/10">
-            <label className="text-xs text-ink-faint">Bedtime (Put to Bed)</label>
-            <div className="mt-1.5 flex items-center gap-2">
-              <input
-                type="time"
-                value={bedtime}
-                onChange={(e) => setBedtime(e.target.value)}
-                className="w-full rounded-xl bg-black/30 px-3 py-1.5 text-sm text-ink ring-1 ring-white/10 focus:outline-none focus:ring-tone/50"
-              />
-              <span className="text-xs text-tone whitespace-nowrap font-medium">
-                {formatTime12(bedtime)}
-              </span>
-            </div>
-          </div>
-
-          <div className="rounded-2xl bg-white/5 p-3.5 ring-1 ring-white/10">
-            <label className="text-xs text-ink-faint">Wake Time (Morning Wake-Up)</label>
-            <div className="mt-1.5 flex items-center gap-2">
-              <input
-                type="time"
-                value={wakeTime}
-                onChange={(e) => setWakeTime(e.target.value)}
-                className="w-full rounded-xl bg-black/30 px-3 py-1.5 text-sm text-ink ring-1 ring-white/10 focus:outline-none focus:ring-tone/50"
-              />
-              <span className="text-xs text-tone whitespace-nowrap font-medium">
-                {formatTime12(wakeTime)}
-              </span>
-            </div>
-          </div>
-
-          <div className="flex items-center">
-            <button
-              type="button"
-              onClick={() => {
-                loadDashboardData(bedtime, wakeTime);
-                if (baby) {
-                  updateBaby({ bedtime, wake_time: wakeTime });
-                }
-              }}
-              disabled={loading}
-              className="w-full rounded-2xl bg-tone px-4 py-3 text-sm font-semibold text-[#0a0b15] transition hover:opacity-90 disabled:opacity-50"
-            >
-              {loading ? "Re-scoping…" : "Apply Bedtime Window"}
-            </button>
-          </div>
-        </div>
+        <button
+          type="button"
+          onClick={() => setEditModalOpen(true)}
+          className="flex items-center gap-2 rounded-full bg-white/5 px-4 py-2.5 text-xs font-medium text-ink ring-1 ring-white/10 transition hover:bg-white/10 hover:text-tone cursor-pointer"
+        >
+          <svg className="h-4 w-4 text-tone" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+          </svg>
+          <span>Edit Baby Profile & Schedule</span>
+        </button>
       </section>
 
       {loading && (
@@ -242,7 +162,7 @@ export default function DashboardPage() {
           <button
             type="button"
             onClick={() => loadDashboardData(bedtime, wakeTime)}
-            className="mt-3 text-xs underline underline-offset-4 hover:text-ink"
+            className="mt-3 text-xs underline underline-offset-4 hover:text-ink cursor-pointer"
           >
             Retry loading
           </button>
@@ -251,106 +171,8 @@ export default function DashboardPage() {
 
       {!loading && (
         <>
-          {/* Key Metrics Grid */}
-          <section className="mt-10 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-            <div className="rounded-2xl bg-white/5 p-4 ring-1 ring-white/10">
-              <span className="text-xs text-ink-faint">Sleep Efficiency</span>
-              <p className="mt-2 font-display text-2xl text-tone tabular-nums [font-variation-settings:'SOFT'_100]">
-                {summary?.metrics.sleep_efficiency_percent ?? "100"} <span className="text-sm font-sans text-ink-dim">%</span>
-              </p>
-              <span className="mt-1 block text-[11px] text-ink-faint">Target: &gt;85%</span>
-            </div>
-            <div className="rounded-2xl bg-white/5 p-4 ring-1 ring-white/10">
-              <span className="text-xs text-ink-faint">Scheduled Crib Time</span>
-              <p className="mt-2 font-display text-2xl text-ink tabular-nums [font-variation-settings:'SOFT'_100]">
-                {summary?.metrics.scheduled_hours ?? "11.0"} <span className="text-sm font-sans text-ink-dim">hrs</span>
-              </p>
-              <span className="mt-1 block text-[11px] text-ink-faint">{formatTime12(bedtime)} – {formatTime12(wakeTime)}</span>
-            </div>
-            <div className="rounded-2xl bg-white/5 p-4 ring-1 ring-white/10">
-              <span className="text-xs text-ink-faint">Total Asleep</span>
-              <p className="mt-2 font-display text-2xl text-ink tabular-nums [font-variation-settings:'SOFT'_100]">
-                {summary?.metrics.sleep_hours ?? "11.0"} <span className="text-sm font-sans text-ink-dim">hrs</span>
-              </p>
-              <span className="mt-1 block text-[11px] text-ink-faint">Logged calm rest</span>
-            </div>
-            <div className="rounded-2xl bg-white/5 p-4 ring-1 ring-white/10">
-              <span className="text-xs text-ink-faint">Avg Breathing</span>
-              <p className="mt-2 font-display text-2xl text-ink tabular-nums [font-variation-settings:'SOFT'_100]">
-                {summary?.metrics.avg_brpm ?? "24.3"} <span className="text-sm font-sans text-ink-dim">BrPM</span>
-              </p>
-              <span className="mt-1 block text-[11px] text-ink-faint">Baseline: 20–30</span>
-            </div>
-            <div className="rounded-2xl bg-white/5 p-4 ring-1 ring-white/10">
-              <span className="text-xs text-ink-faint">Avg Pulse</span>
-              <p className="mt-2 font-display text-2xl text-ink tabular-nums [font-variation-settings:'SOFT'_100]">
-                {summary?.metrics.avg_bpm ?? "109"} <span className="text-sm font-sans text-ink-dim">BPM</span>
-              </p>
-              <span className="mt-1 block text-[11px] text-ink-faint">Baseline: 100–130</span>
-            </div>
-            <div className="rounded-2xl bg-white/5 p-4 ring-1 ring-white/10">
-              <span className="text-xs text-ink-faint">Auto-Soothed</span>
-              <p className="mt-2 font-display text-2xl text-ink tabular-nums [font-variation-settings:'SOFT'_100]">
-                {summary?.metrics.soothe_interventions_count ?? "2"} <span className="text-sm font-sans text-ink-dim">times</span>
-              </p>
-              <span className="mt-1 block text-[11px] text-ink-faint">~{summary?.metrics.avg_soothe_resolve_seconds ?? 40}s avg settle</span>
-            </div>
-          </section>
-
-          {/* Sleep Stages Timeline (Hypnogram) */}
-          <section className="mt-12 rounded-3xl bg-white/5 p-6 ring-1 ring-white/10 sm:p-8">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="font-display text-2xl text-ink [font-variation-settings:'SOFT'_100]">
-                Sleep State Timeline
-              </h2>
-              <span className="text-xs text-ink-faint">Tiger Data Hypertable · Scoped to Scheduled Night</span>
-            </div>
-
-            {/* Timeline Segment Bar */}
-            <div className="mt-6">
-              <div className="flex h-7 w-full overflow-hidden rounded-full bg-white/5 p-1 ring-1 ring-white/10">
-                {timeline.length > 0 ? (
-                  timeline.map((entry, idx) => {
-                    const color = STATE_COLORS[entry.state]?.bg || "bg-white/15";
-                    return (
-                      <div
-                        key={idx}
-                        className={`h-full flex-1 first:rounded-l-full last:rounded-r-full transition-opacity hover:opacity-100 ${color}`}
-                        title={`${entry.state} at ${new Date(entry.time).toLocaleTimeString()}`}
-                      />
-                    );
-                  })
-                ) : (
-                  // Fallback demo timeline segments
-                  <>
-                    <div className="h-full w-[45%] rounded-l-full bg-indigo-400/80" title="Asleep" />
-                    <div className="h-full w-[10%] bg-amber-400" title="Restless (Soothed)" />
-                    <div className="h-full w-[35%] bg-indigo-400/80" title="Asleep" />
-                    <div className="h-full w-[10%] rounded-r-full bg-sky-400/80" title="Drowsy" />
-                  </>
-                )}
-              </div>
-              <div className="mt-2 flex justify-between text-xs text-ink-faint">
-                <span>Bedtime ({formatTime12(bedtime)})</span>
-                <span>Midnight</span>
-                <span>3:00 AM (Restless spike)</span>
-                <span>Wake Time ({formatTime12(wakeTime)})</span>
-              </div>
-            </div>
-
-            {/* Legend */}
-            <div className="mt-6 flex flex-wrap gap-4 text-xs text-ink-dim">
-              {Object.entries(STATE_COLORS).map(([key, item]) => (
-                <div key={key} className="flex items-center gap-1.5">
-                  <span className={`h-2.5 w-2.5 rounded-full ${item.bg}`} />
-                  <span>{item.label}</span>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          {/* Vitals Trends: Breathing & Heart Rate Charts */}
-          <section className="mt-12 grid gap-8 lg:grid-cols-2">
+          {/* 1. Vitals Trends: Breathing & Heart Rate Charts (Moved to top) */}
+          <section className="mt-10 grid gap-8 lg:grid-cols-2">
             {/* Breathing Rate Trend Card */}
             <div className="rounded-3xl bg-white/5 p-6 ring-1 ring-white/10 sm:p-8">
               <div className="flex items-baseline justify-between">
@@ -446,41 +268,120 @@ export default function DashboardPage() {
             </div>
           </section>
 
-          {/* Gemini AI Morning Briefing */}
-          <section className="mt-12 rounded-3xl bg-white/5 p-6 ring-1 ring-white/10 sm:p-8">
+          {/* 2. Sleep Stages Timeline (Underneath Vitals) */}
+          <section className="mt-8 rounded-3xl bg-white/5 p-6 ring-1 ring-white/10 sm:p-8">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <h2 className="font-display text-2xl text-ink [font-variation-settings:'SOFT'_100]">
-                Gemini Nightly Synthesis
+                Sleep State Timeline
               </h2>
-              <span className="text-xs text-ink-faint">Gemini 3.5 Flash Lite Briefing · {formatTime12(bedtime)} to {formatTime12(wakeTime)}</span>
+              <span className="text-xs text-ink-faint">Tiger Data Hypertable · Scoped to Scheduled Night</span>
             </div>
-            <ul className="mt-6 flex flex-col gap-4">
-              {summary?.summary_bullets.map((bullet, idx) => (
-                <li
-                  key={idx}
-                  className="font-display text-lg leading-relaxed text-ink [font-variation-settings:'SOFT'_100] sm:text-xl"
-                >
-                  {bullet}
-                </li>
-              )) || (
-                <>
-                  <li className="font-display text-lg text-ink [font-variation-settings:'SOFT'_100]">
-                    🌙 {title} slept 11.0 hours uninterrupted with 100% sleep efficiency during the scheduled bedtime.
-                  </li>
-                  <li className="font-display text-lg text-ink [font-variation-settings:'SOFT'_100]">
-                    🕊️ Auto-soothe intervened twice during restlessness, gently settling them back to sleep within 40 seconds.
-                  </li>
-                  <li className="font-display text-lg text-ink [font-variation-settings:'SOFT'_100]">
-                    ✨ Vital signals remained stable with average breathing rate at 24.3 BrPM.
-                  </li>
-                </>
-              )}
-            </ul>
+
+            {/* Timeline Segment Bar */}
+            <div className="mt-6">
+              <div className="flex h-7 w-full overflow-hidden rounded-full bg-white/5 p-1 ring-1 ring-white/10">
+                {timeline.length > 0 ? (
+                  timeline.map((entry, idx) => {
+                    const color = STATE_COLORS[entry.state]?.bg || "bg-white/15";
+                    return (
+                      <div
+                        key={idx}
+                        className={`h-full flex-1 first:rounded-l-full last:rounded-r-full transition-opacity hover:opacity-100 ${color}`}
+                        title={`${entry.state} at ${new Date(entry.time).toLocaleTimeString()}`}
+                      />
+                    );
+                  })
+                ) : (
+                  // Fallback demo timeline segments
+                  <>
+                    <div className="h-full w-[45%] rounded-l-full bg-indigo-400/80" title="Asleep" />
+                    <div className="h-full w-[10%] bg-amber-400" title="Restless (Soothed)" />
+                    <div className="h-full w-[35%] bg-indigo-400/80" title="Asleep" />
+                    <div className="h-full w-[10%] rounded-r-full bg-sky-400/80" title="Drowsy" />
+                  </>
+                )}
+              </div>
+              <div className="mt-2 flex justify-between text-xs text-ink-faint">
+                <span>Bedtime ({formatTime12(bedtime)})</span>
+                <span>Midnight</span>
+                <span>3:00 AM (Restless spike)</span>
+                <span>Wake Time ({formatTime12(wakeTime)})</span>
+              </div>
+            </div>
+
+            {/* Legend */}
+            <div className="mt-6 flex flex-wrap gap-4 text-xs text-ink-dim">
+              {Object.entries(STATE_COLORS).map(([key, item]) => (
+                <div key={key} className="flex items-center gap-1.5">
+                  <span className={`h-2.5 w-2.5 rounded-full ${item.bg}`} />
+                  <span>{item.label}</span>
+                </div>
+              ))}
+            </div>
           </section>
 
-          <GeminiNightQA bedtime={bedtime} wakeTime={wakeTime} />
+          {/* 3. Gemini Nightly Synthesis & Gemini Chat Side-by-Side */}
+          <div className="mt-8 grid gap-8 lg:grid-cols-2">
+            {/* Gemini AI Morning Briefing */}
+            <section className="flex flex-col justify-between rounded-3xl bg-white/5 p-6 ring-1 ring-white/10 sm:p-8">
+              <div>
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <h2 className="font-display text-2xl text-ink [font-variation-settings:'SOFT'_100]">
+                    Gemini Nightly Synthesis
+                  </h2>
+                  <span className="text-xs text-ink-faint">
+                    {formatTime12(bedtime)} – {formatTime12(wakeTime)}
+                  </span>
+                </div>
+                <ul className="mt-6 flex flex-col gap-4">
+                  {summary?.summary_bullets.map((bullet, idx) => (
+                    <li
+                      key={idx}
+                      className="font-display text-base leading-relaxed text-ink [font-variation-settings:'SOFT'_100] sm:text-lg"
+                    >
+                      {bullet}
+                    </li>
+                  )) || (
+                    <>
+                      <li className="font-display text-base text-ink [font-variation-settings:'SOFT'_100] sm:text-lg">
+                        🌙 {title} slept {summary?.metrics.sleep_hours ?? 11.0} hours with {summary?.metrics.sleep_efficiency_percent ?? 100}% sleep efficiency during the scheduled bedtime window.
+                      </li>
+                      <li className="font-display text-base text-ink [font-variation-settings:'SOFT'_100] sm:text-lg">
+                        🕊️ Auto-soothe intervened {summary?.metrics.soothe_interventions_count ?? 2} times during restlessness, settling restlessness in under {summary?.metrics.avg_soothe_resolve_seconds ?? 40}s.
+                      </li>
+                      <li className="font-display text-base text-ink [font-variation-settings:'SOFT'_100] sm:text-lg">
+                        ✨ Vital signals remained steady throughout the night, with an average breathing rate of {summary?.metrics.avg_brpm ?? 24.3} BrPM and pulse of {summary?.metrics.avg_bpm ?? 109} BPM.
+                      </li>
+                    </>
+                  )}
+                </ul>
+              </div>
+              <div className="mt-6 flex items-center justify-between border-t border-white/5 pt-4 text-xs text-ink-faint">
+                <span>AI Briefing by Gemini 3.5</span>
+                <span>Powered by Tiger Data vitals</span>
+              </div>
+            </section>
+
+            {/* Gemini Q&A Chat */}
+            <GeminiNightQA
+              bedtime={bedtime}
+              wakeTime={wakeTime}
+              className="flex flex-col justify-between rounded-3xl bg-white/5 p-6 ring-1 ring-white/10 sm:p-8"
+            />
+          </div>
         </>
       )}
+
+      {/* Edit Baby Profile & Schedule Modal */}
+      <EditBabyProfileModal
+        isOpen={editModalOpen}
+        onClose={() => setEditModalOpen(false)}
+        onSaved={(newB, newW) => {
+          setBedtime(newB);
+          setWakeTime(newW);
+          loadDashboardData(newB, newW);
+        }}
+      />
 
       <Disclaimer />
     </div>
