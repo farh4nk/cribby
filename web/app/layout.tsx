@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
-import { Instrument_Sans } from "next/font/google";
 import { AuthProvider } from "@/context/AuthProvider";
 import { NightShell } from "@/components/NightShell";
 import { OnboardingModal } from "@/components/OnboardingModal";
@@ -10,16 +9,13 @@ import { PwaRegister } from "@/components/PwaRegister";
 import { APP_NAME } from "@/lib/config";
 import "./globals.css";
 
-// Playful, child-themed display font for headlines, hero states, and badges
-const milkyway = localFont({
-  src: "./fonts/Milkyway-DEMO.ttf",
-  variable: "--font-milkyway",
+// The one typeface across the site: Gontserrat Light.
+const gontserrat = localFont({
+  src: "./fonts/Gontserrat-Light.ttf",
+  weight: "300",
+  style: "normal",
+  variable: "--font-gontserrat",
   display: "swap",
-});
-
-const instrument = Instrument_Sans({
-  variable: "--font-instrument",
-  subsets: ["latin"],
 });
 
 export const metadata: Metadata = {
@@ -42,7 +38,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${milkyway.variable} ${instrument.variable} h-full`}>
+    <html lang="en" className={`${gontserrat.variable} h-full`}>
       <head>
         <link rel="preload" as="script" href="/sw.js" />
       </head>
