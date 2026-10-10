@@ -4,7 +4,6 @@ import { CameraWindow } from "@/components/CameraWindow";
 import { DemoTray } from "@/components/DemoTray";
 import { Disclaimer } from "@/components/Disclaimer";
 import { Header } from "@/components/Header";
-import { MorningRecapCard } from "@/components/MorningRecapCard";
 import { NamePrompt } from "@/components/NamePrompt";
 import { StateHero } from "@/components/StateHero";
 import { StateRibbon } from "@/components/StateRibbon";
@@ -22,12 +21,11 @@ export default function Home() {
           <StateRibbon />
           <div className="mt-4"><ActivityLog /></div>
         </div>
-        <aside className="flex flex-col gap-12 lg:pt-1">
+        <aside className="flex flex-col gap-10 lg:pt-1">
           <VitalsPanel />
           <AudioPanel />
         </aside>
       </main>
-      <MorningRecapCard />
       <DemoTray />
       <Disclaimer />
     </div>

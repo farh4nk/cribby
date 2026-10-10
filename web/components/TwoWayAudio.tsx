@@ -29,6 +29,10 @@ export function TwoWayAudio({ sootheEngine }: { sootheEngine: SootheEngine | nul
   const [listenState, setListenState] = useState<ListenState>("off");
   const [listenError, setListenError] = useState<string | null>(null);
   const [listenLevel, setListenLevel] = useState(0);
+  const [manuallyOpened, setManuallyOpened] = useState(false);
+
+  const isBusyOrActive = talkState === "talking" || listenState === "listening";
+  const isOpen = manuallyOpened || isBusyOrActive;
 
   const talkWsRef = useRef<WebSocket | null>(null);
   const listenWsRef = useRef<WebSocket | null>(null);
@@ -327,85 +331,135 @@ export function TwoWayAudio({ sootheEngine }: { sootheEngine: SootheEngine | nul
             : "Error";
 
   return (
-    <section className="flex flex-col gap-4">
-      <h2 className="font-display text-xl text-ink [font-variation-settings:'SOFT'_100]">Two-way Audio</h2>
+    <section className="flex flex-col rounded-2xl bg-white/5 ring-1 ring-white/10 overflow-hidden transition-all">
+      <button
+        type="button"
+        onClick={() => setManuallyOpened(!isOpen)}
+        className="flex w-full items-center justify-between p-4 text-left hover:bg-white/[0.03] transition cursor-pointer"
+        aria-expanded={isOpen}
+      >
+        <div className="flex items-center gap-3">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white/5 ring-1 ring-white/10 text-tone">
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+            </svg>
+          </div>
+          <div>
+            <h2 className="font-display text-base tracking-tight text-ink [font-variation-settings:'SOFT'_100]">
+              Two-Way Audio
+            </h2>
+            <p className="text-xs text-ink-faint">
+              {talkState === "talking"
+                ? "Speaking to baby"
+                : listenState === "listening"
+                  ? `Listening (${Math.round(listenLevel * 100)}%)`
+                  : "Push-to-talk & nursery monitor"}
+            </p>
+          </div>
+        </div>
 
-      {capabilities.talk && (
-        <div className="flex flex-col gap-3">
-          {!secureContext ? (
-            <div className="rounded-xl bg-amber-500/10 px-4 py-3 text-sm text-amber-300 ring-1 ring-amber-500/30">
-              <div>Microphone needs HTTPS or localhost</div>
-              <a href={`http://${typeof window !== "undefined" ? window.location.hostname : "localhost"}/pair`} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-xs underline hover:text-amber-100">
-                Pair this device to enable the microphone
-              </a>
-            </div>
+        <div className="flex items-center gap-2">
+          {isBusyOrActive ? (
+            <span className="flex items-center gap-1.5 rounded-full bg-tone/20 px-2.5 py-0.5 text-xs font-medium text-tone ring-1 ring-tone/30">
+              <span className="h-1.5 w-1.5 rounded-full bg-tone breathe" />
+              {talkState === "talking" ? "Live Voice" : "Listening"}
+            </span>
           ) : (
-            <button
-              type="button"
-              onPointerDown={handlePointerDown}
-              onPointerUp={handlePointerUp}
-              onPointerCancel={handlePointerUp}
-              onPointerLeave={handlePointerUp}
-              onBlur={handleBlur}
-              disabled={talkState !== "idle" && talkState !== "talking"}
-              className={`
-                relative flex items-center justify-center gap-3 rounded-xl px-5 py-4 text-sm font-medium transition
-                ${talkState === "talking" ? "bg-tone/20 text-tone ring-2 ring-tone" : "bg-white/5 text-ink ring-1 ring-white/10 hover:bg-white/10"}
-                ${talkState === "busy" || talkState === "error" ? "cursor-not-allowed opacity-60" : ""}
-                ${talkState === "connecting" ? "animate-pulse" : ""}
-              `}
-              aria-pressed={talkState === "talking"}
-              aria-label={talkLabel}
-            >
-              <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-              </svg>
-              <span>{talkLabel}</span>
-              {talkState === "talking" && (
-                <span className="breathe h-2 w-2 rounded-full bg-tone" aria-hidden />
-              )}
-            </button>
+            <span className="text-xs text-ink-dim">
+              {isOpen ? "Hide" : "Open"}
+            </span>
           )}
-          {talkError && (
-            <p className="text-sm text-rose-300" role="alert">{talkError}</p>
-          )}
+          <svg
+            className={`h-4 w-4 text-ink-dim transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
         </div>
-      )}
+      </button>
 
-      {capabilities.listen && (
-        <div className="flex flex-col gap-3">
-          <label className="flex items-center gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={listenState === "listening" || listenState === "connecting"}
-              onChange={toggleListen}
-              disabled={listenState === "connecting"}
-              className="h-4 w-4 rounded border-white/20 bg-white/5 text-tone focus:ring-2 focus:ring-tone/50"
-            />
-            <span className="text-sm text-ink">{listenState === "listening" ? "Stop listening" : "Listen to nursery"}</span>
-            {listenState === "connecting" && <span className="breathe h-2 w-2 rounded-full bg-tone" aria-hidden />}
-          </label>
-          {(listenState === "listening" || listenState === "connecting") && (
-            <div className="flex items-center gap-3 text-sm text-ink-dim">
-              <div className="flex-1 h-2 rounded-full bg-white/10 overflow-hidden">
-                <div
-                  className="h-full bg-tone transition-all duration-100"
-                  style={{ width: `${listenLevel * 100}%` }}
-                  aria-hidden
-                />
-              </div>
-              <span className="tabular-nums w-12 text-right">{Math.round(listenLevel * 100)}%</span>
+      {isOpen && (
+        <div className="border-t border-white/5 p-4 sm:p-5 pt-3 flex flex-col gap-4">
+          {capabilities.talk && (
+            <div className="flex flex-col gap-3">
+              {!secureContext ? (
+                <div className="rounded-xl bg-amber-500/10 px-4 py-3 text-sm text-amber-300 ring-1 ring-amber-500/30">
+                  <div>Microphone needs HTTPS or localhost</div>
+                  <a href={`http://${typeof window !== "undefined" ? window.location.hostname : "localhost"}/pair`} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-xs underline hover:text-amber-100">
+                    Pair this device to enable the microphone
+                  </a>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onPointerDown={handlePointerDown}
+                  onPointerUp={handlePointerUp}
+                  onPointerCancel={handlePointerUp}
+                  onPointerLeave={handlePointerUp}
+                  onBlur={handleBlur}
+                  disabled={talkState !== "idle" && talkState !== "talking"}
+                  className={`
+                    relative flex items-center justify-center gap-3 rounded-xl px-5 py-4 text-sm font-medium transition
+                    ${talkState === "talking" ? "bg-tone/20 text-tone ring-2 ring-tone" : "bg-white/5 text-ink ring-1 ring-white/10 hover:bg-white/10"}
+                    ${talkState === "busy" || talkState === "error" ? "cursor-not-allowed opacity-60" : ""}
+                    ${talkState === "connecting" ? "animate-pulse" : ""}
+                  `}
+                  aria-pressed={talkState === "talking"}
+                  aria-label={talkLabel}
+                >
+                  <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                  </svg>
+                  <span>{talkLabel}</span>
+                  {talkState === "talking" && (
+                    <span className="breathe h-2 w-2 rounded-full bg-tone" aria-hidden />
+                  )}
+                </button>
+              )}
+              {talkError && (
+                <p className="text-sm text-rose-300" role="alert">{talkError}</p>
+              )}
             </div>
           )}
-          {listenError && (
-            <p className="text-sm text-rose-300" role="alert">{listenError}</p>
+
+          {capabilities.listen && (
+            <div className="flex flex-col gap-3">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={listenState === "listening" || listenState === "connecting"}
+                  onChange={toggleListen}
+                  disabled={listenState === "connecting"}
+                  className="h-4 w-4 rounded border-white/20 bg-white/5 text-tone focus:ring-2 focus:ring-tone/50"
+                />
+                <span className="text-sm text-ink">{listenState === "listening" ? "Stop listening" : "Listen to nursery"}</span>
+                {listenState === "connecting" && <span className="breathe h-2 w-2 rounded-full bg-tone" aria-hidden />}
+              </label>
+              {(listenState === "listening" || listenState === "connecting") && (
+                <div className="flex items-center gap-3 text-sm text-ink-dim">
+                  <div className="flex-1 h-2 rounded-full bg-white/10 overflow-hidden">
+                    <div
+                      className="h-full bg-tone transition-all duration-100"
+                      style={{ width: `${listenLevel * 100}%` }}
+                      aria-hidden
+                    />
+                  </div>
+                  <span className="tabular-nums w-12 text-right">{Math.round(listenLevel * 100)}%</span>
+                </div>
+              )}
+              {listenError && (
+                <p className="text-sm text-rose-300" role="alert">{listenError}</p>
+              )}
+            </div>
           )}
+
+          <p className="text-xs text-ink-faint">
+            Audio is streamed directly between this browser and the monitor. No audio is recorded or stored.
+          </p>
         </div>
       )}
-
-      <p className="text-xs text-ink-faint">
-        Audio is streamed directly between this browser and the monitor. No audio is recorded or stored.
-      </p>
     </section>
   );
 }
