@@ -77,14 +77,21 @@ def get_night_window(
 def fetch_nightly_metrics(
     bedtime: str = "20:00",
     wake_time: str = "07:00",
-    hours: Optional[int] = None
+    hours: Optional[int] = None,
+    is_real: Optional[bool] = None
 ) -> Dict[str, Any]:
     """Queries Tiger Data for vitals and soothe events scoped to the parent's scheduled bedtime window."""
     with get_db_connection() as conn:
         cur = conn.cursor()
         try:
+            real_clause = ""
+            params_real = []
+            if is_real is not None:
+                real_clause = " AND is_real = %s" if is_postgres() else " AND is_real = ?"
+                params_real = [is_real]
+
             # Determine latest recorded data in database to anchor timeline
-            cur.execute("SELECT MIN(time) as min_time, MAX(time) as max_time FROM baby_vitals;")
+            cur.execute(f"SELECT MIN(time) as min_time, MAX(time) as max_time FROM baby_vitals WHERE 1=1{real_clause};", params_real if real_clause else None)
             time_row = cur.fetchone()
             latest_time = parse_dt_safe(time_row["max_time"]) if time_row and time_row["max_time"] else datetime.datetime.now(datetime.timezone.utc)
 
@@ -96,7 +103,7 @@ def fetch_nightly_metrics(
 
             # 1. Fetch vitals summary scoped to the bedtime window
             cur.execute(
-                """
+                f"""
                 SELECT 
                     COUNT(*) as total_samples,
                     COUNT(CASE WHEN state = 'ASLEEP' THEN 1 END) as asleep_samples,
@@ -111,25 +118,9 @@ def fetch_nightly_metrics(
                     MIN(time) as session_start,
                     MAX(time) as session_end
                 FROM baby_vitals
-                WHERE time >= %s AND time <= %s;
-                """ if is_postgres() else """
-                SELECT 
-                    COUNT(*) as total_samples,
-                    COUNT(CASE WHEN state = 'ASLEEP' THEN 1 END) as asleep_samples,
-                    COUNT(CASE WHEN state = 'RESTLESS' THEN 1 END) as restless_samples,
-                    COUNT(CASE WHEN state = 'AWAKE' THEN 1 END) as awake_samples,
-                    AVG(CASE WHEN breathing_rate > 0 THEN breathing_rate END) as avg_brpm,
-                    MIN(CASE WHEN breathing_rate > 0 THEN breathing_rate END) as min_brpm,
-                    MAX(CASE WHEN breathing_rate > 0 THEN breathing_rate END) as max_brpm,
-                    AVG(CASE WHEN heart_rate > 0 THEN heart_rate END) as avg_bpm,
-                    MIN(CASE WHEN heart_rate > 0 THEN heart_rate END) as min_bpm,
-                    MAX(CASE WHEN heart_rate > 0 THEN heart_rate END) as max_bpm,
-                    MIN(time) as session_start,
-                    MAX(time) as session_end
-                FROM baby_vitals
-                WHERE time >= ? AND time <= ?;
+                WHERE time >= {"%s" if is_postgres() else "?"} AND time <= {"%s" if is_postgres() else "?"}{real_clause};
                 """,
-                (window_start, window_end)
+                [window_start, window_end] + params_real
             )
             vitals_row = cur.fetchone()
 
@@ -137,7 +128,7 @@ def fetch_nightly_metrics(
             if not vitals_row or not vitals_row["total_samples"] or not vitals_row["avg_brpm"]:
                 fallback_start = latest_time - datetime.timedelta(hours=11)
                 cur.execute(
-                    """
+                    f"""
                     SELECT 
                         COUNT(*) as total_samples,
                         COUNT(CASE WHEN state = 'ASLEEP' THEN 1 END) as asleep_samples,
@@ -152,25 +143,9 @@ def fetch_nightly_metrics(
                         MIN(time) as session_start,
                         MAX(time) as session_end
                     FROM baby_vitals
-                    WHERE time >= %s;
-                    """ if is_postgres() else """
-                    SELECT 
-                        COUNT(*) as total_samples,
-                        COUNT(CASE WHEN state = 'ASLEEP' THEN 1 END) as asleep_samples,
-                        COUNT(CASE WHEN state = 'RESTLESS' THEN 1 END) as restless_samples,
-                        COUNT(CASE WHEN state = 'AWAKE' THEN 1 END) as awake_samples,
-                        AVG(CASE WHEN breathing_rate > 0 THEN breathing_rate END) as avg_brpm,
-                        MIN(CASE WHEN breathing_rate > 0 THEN breathing_rate END) as min_brpm,
-                        MAX(CASE WHEN breathing_rate > 0 THEN breathing_rate END) as max_brpm,
-                        AVG(CASE WHEN heart_rate > 0 THEN heart_rate END) as avg_bpm,
-                        MIN(CASE WHEN heart_rate > 0 THEN heart_rate END) as min_bpm,
-                        MAX(CASE WHEN heart_rate > 0 THEN heart_rate END) as max_bpm,
-                        MIN(time) as session_start,
-                        MAX(time) as session_end
-                    FROM baby_vitals
-                    WHERE time >= ?;
+                    WHERE time >= {"%s" if is_postgres() else "?"}{real_clause};
                     """,
-                    (fallback_start,)
+                    [fallback_start] + params_real
                 )
                 vitals_row = cur.fetchone()
                 window_start = fallback_start
@@ -178,18 +153,13 @@ def fetch_nightly_metrics(
             
             # 2. Fetch soothe events scoped to the window
             cur.execute(
-                """
-                SELECT id, triggered_at, resolved_at, voice_snippet_used, was_successful
+                f"""
+                SELECT id, triggered_at, resolved_at, voice_snippet_used, was_successful, is_real
                 FROM soothe_events
-                WHERE triggered_at >= %s AND triggered_at <= %s
-                ORDER BY triggered_at ASC;
-                """ if is_postgres() else """
-                SELECT id, triggered_at, resolved_at, voice_snippet_used, was_successful
-                FROM soothe_events
-                WHERE triggered_at >= ? AND triggered_at <= ?
+                WHERE triggered_at >= {"%s" if is_postgres() else "?"} AND triggered_at <= {"%s" if is_postgres() else "?"}{real_clause}
                 ORDER BY triggered_at ASC;
                 """,
-                (window_start, window_end)
+                [window_start, window_end] + params_real
             )
             soothe_rows = cur.fetchall()
         finally:

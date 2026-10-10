@@ -12,18 +12,21 @@ CREATE TABLE IF NOT EXISTS baby_vitals (
     breathing_rate REAL,
     heart_rate REAL,
     confidence REAL,
-    motion_index REAL DEFAULT 0.0
+    motion_index REAL DEFAULT 0.0,
+    is_real BOOLEAN DEFAULT 1
 );
 
 CREATE INDEX IF NOT EXISTS idx_baby_vitals_time ON baby_vitals (time DESC);
 CREATE INDEX IF NOT EXISTS idx_baby_vitals_state ON baby_vitals (state);
+CREATE INDEX IF NOT EXISTS idx_baby_vitals_is_real ON baby_vitals (is_real);
 
 CREATE TABLE IF NOT EXISTS soothe_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     triggered_at TEXT NOT NULL,
     resolved_at TEXT,
     voice_snippet_used TEXT,
-    was_successful BOOLEAN DEFAULT 0
+    was_successful BOOLEAN DEFAULT 0,
+    is_real BOOLEAN DEFAULT 1
 );
 
 CREATE INDEX IF NOT EXISTS idx_soothe_events_triggered_at ON soothe_events (triggered_at DESC);
@@ -63,12 +66,22 @@ def run_migrations():
         import sqlite3
         if isinstance(conn, sqlite3.Connection):
             print("Target: SQLite (cradleecho_local.db)")
-            conn.executescript(SQLITE_FALLBACK_SCHEMA)
             try:
                 conn.execute("ALTER TABLE users ADD COLUMN onboarded BOOLEAN DEFAULT 0;")
                 conn.commit()
             except Exception:
                 pass  # column already exists
+            try:
+                conn.execute("ALTER TABLE baby_vitals ADD COLUMN is_real BOOLEAN DEFAULT 1;")
+                conn.commit()
+            except Exception:
+                pass
+            try:
+                conn.execute("ALTER TABLE soothe_events ADD COLUMN is_real BOOLEAN DEFAULT 1;")
+                conn.commit()
+            except Exception:
+                pass
+            conn.executescript(SQLITE_FALLBACK_SCHEMA)
             print("Successfully migrated tables ('users', 'babies', 'baby_vitals', 'soothe_events') to SQLite!")
         else:
             print(f"Target: PostgreSQL / Tiger Data ({DATABASE_URL.split('@')[-1] if '@' in DATABASE_URL else 'PostgreSQL'})")

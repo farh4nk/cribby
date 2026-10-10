@@ -49,12 +49,14 @@ def generate_night_session(
             "resolved_at": restless_1_end.isoformat(),
             "voice_snippet_used": "Shhh, Mommy and Daddy love you.",
             "was_successful": True,
+            "is_real": False,
         },
         {
             "triggered_at": restless_2_soothe.isoformat(),
             "resolved_at": restless_2_end.isoformat(),
             "voice_snippet_used": "Go to sleep, sweet dreams.",
             "was_successful": True,
+            "is_real": False,
         }
     ]
 
@@ -101,7 +103,8 @@ def generate_night_session(
             brpm,
             bpm,
             confidence,
-            motion
+            motion,
+            False  # is_real: False (synthetic / seeded demo data)
         ))
         current_time += datetime.timedelta(seconds=step_seconds)
 
@@ -122,10 +125,22 @@ def seed_sqlite_database(db_path: str, vitals: List[Tuple], soothe_events: List[
             breathing_rate REAL,
             heart_rate REAL,
             confidence REAL,
-            motion_index REAL DEFAULT 0.0
+            motion_index REAL DEFAULT 0.0,
+            is_real BOOLEAN DEFAULT 1
         );
         """)
+        # Backward compatibility alters if table already existed without is_real
+        try:
+            cur.execute("ALTER TABLE baby_vitals ADD COLUMN is_real BOOLEAN DEFAULT 1;")
+        except Exception:
+            pass
+        try:
+            cur.execute("ALTER TABLE soothe_events ADD COLUMN is_real BOOLEAN DEFAULT 1;")
+        except Exception:
+            pass
+
         cur.execute("CREATE INDEX IF NOT EXISTS idx_baby_vitals_time ON baby_vitals (time DESC);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_baby_vitals_is_real ON baby_vitals (is_real);")
 
         cur.execute("""
         CREATE TABLE IF NOT EXISTS soothe_events (
@@ -133,7 +148,8 @@ def seed_sqlite_database(db_path: str, vitals: List[Tuple], soothe_events: List[
             triggered_at TEXT NOT NULL,
             resolved_at TEXT,
             voice_snippet_used TEXT,
-            was_successful BOOLEAN DEFAULT 0
+            was_successful BOOLEAN DEFAULT 0,
+            is_real BOOLEAN DEFAULT 1
         );
         """)
 
@@ -144,8 +160,8 @@ def seed_sqlite_database(db_path: str, vitals: List[Tuple], soothe_events: List[
         # Insert vitals
         cur.executemany(
             """
-            INSERT INTO baby_vitals (time, state, breathing_rate, heart_rate, confidence, motion_index)
-            VALUES (?, ?, ?, ?, ?, ?);
+            INSERT INTO baby_vitals (time, state, breathing_rate, heart_rate, confidence, motion_index, is_real)
+            VALUES (?, ?, ?, ?, ?, ?, ?);
             """,
             vitals
         )
@@ -153,10 +169,10 @@ def seed_sqlite_database(db_path: str, vitals: List[Tuple], soothe_events: List[
         for event in soothe_events:
             cur.execute(
                 """
-                INSERT INTO soothe_events (triggered_at, resolved_at, voice_snippet_used, was_successful)
-                VALUES (?, ?, ?, ?);
+                INSERT INTO soothe_events (triggered_at, resolved_at, voice_snippet_used, was_successful, is_real)
+                VALUES (?, ?, ?, ?, ?);
                 """,
-                (event["triggered_at"], event["resolved_at"], event["voice_snippet_used"], event["was_successful"])
+                (event["triggered_at"], event["resolved_at"], event["voice_snippet_used"], event["was_successful"], event.get("is_real", False))
             )
 
         conn.commit()
@@ -179,8 +195,16 @@ def seed_postgres_database(vitals: List[Tuple], soothe_events: List[Dict]):
     try:
         import psycopg
         conn = psycopg.connect(conn_str, connect_timeout=5)
-        cur = conn.cursor()
         try:
+            cur = conn.cursor()
+            # Ensure is_real column exists
+            try:
+                cur.execute("ALTER TABLE baby_vitals ADD COLUMN IF NOT EXISTS is_real BOOLEAN DEFAULT TRUE;")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_baby_vitals_is_real ON baby_vitals (is_real);")
+                cur.execute("ALTER TABLE soothe_events ADD COLUMN IF NOT EXISTS is_real BOOLEAN DEFAULT TRUE;")
+            except Exception:
+                pass
+
             # Clear old corrupted/zero rows
             cur.execute("DELETE FROM baby_vitals;")
             cur.execute("DELETE FROM soothe_events;")
@@ -188,8 +212,8 @@ def seed_postgres_database(vitals: List[Tuple], soothe_events: List[Dict]):
             # Insert vitals in batch
             cur.executemany(
                 """
-                INSERT INTO baby_vitals (time, state, breathing_rate, heart_rate, confidence, motion_index)
-                VALUES (%s, %s, %s, %s, %s, %s);
+                INSERT INTO baby_vitals (time, state, breathing_rate, heart_rate, confidence, motion_index, is_real)
+                VALUES (%s, %s, %s, %s, %s, %s, %s);
                 """,
                 vitals
             )
@@ -197,10 +221,10 @@ def seed_postgres_database(vitals: List[Tuple], soothe_events: List[Dict]):
             for event in soothe_events:
                 cur.execute(
                     """
-                    INSERT INTO soothe_events (triggered_at, resolved_at, voice_snippet_used, was_successful)
-                    VALUES (%s, %s, %s, %s);
+                    INSERT INTO soothe_events (triggered_at, resolved_at, voice_snippet_used, was_successful, is_real)
+                    VALUES (%s, %s, %s, %s, %s);
                     """,
-                    (event["triggered_at"], event["resolved_at"], event["voice_snippet_used"], event["was_successful"])
+                    (event["triggered_at"], event["resolved_at"], event["voice_snippet_used"], event["was_successful"], event.get("is_real", False))
                 )
 
             conn.commit()

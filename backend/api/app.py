@@ -48,6 +48,7 @@ class SootheEventCreate(BaseModel):
     resolved_at: Optional[str] = None
     voice_snippet_used: str
     was_successful: bool = True
+    is_real: Optional[bool] = True
 
 @app.get("/api/health")
 def health_check():
@@ -79,11 +80,12 @@ def get_nightly_summary(
     baby_name: str = "Baby",
     bedtime: str = "20:00",
     wake_time: str = "07:00",
-    hours: Optional[int] = None
+    hours: Optional[int] = None,
+    is_real: Optional[bool] = None
 ):
     """Task 4.3: Aggregates night vitals from Tiger Data scoped to parent bedtime window and prompts Gemini."""
     try:
-        metrics = fetch_nightly_metrics(bedtime=bedtime, wake_time=wake_time, hours=hours)
+        metrics = fetch_nightly_metrics(bedtime=bedtime, wake_time=wake_time, hours=hours, is_real=is_real)
         summary = generate_morning_brief(metrics, baby_name=baby_name)
         return summary
     except Exception as e:
@@ -117,50 +119,46 @@ def downsample_rows(rows: List[Dict[str, Any]], limit: int) -> List[Dict[str, An
 def get_sleep_timeline(
     limit: int = 120,
     bedtime: Optional[str] = "20:00",
-    wake_time: Optional[str] = "07:00"
+    wake_time: Optional[str] = "07:00",
+    is_real: Optional[bool] = None
 ):
     """Returns chronological timeline segments for Dev 2's sleep status block chart."""
     with get_db_connection() as conn:
         cur = conn.cursor()
         try:
+            real_clause = ""
+            params_real = []
+            if is_real is not None:
+                real_clause = " AND is_real = %s" if is_postgres(conn) else " AND is_real = ?"
+                params_real = [is_real]
+
             if bedtime and wake_time:
                 cur.execute("SELECT MAX(time) as max_time FROM baby_vitals;")
                 time_row = cur.fetchone()
                 latest_time = parse_dt_safe(time_row["max_time"]) if time_row and time_row["max_time"] else datetime.datetime.now(datetime.timezone.utc)
                 window_start, window_end = get_night_window(bedtime, wake_time, as_of=latest_time)
 
-                cur.execute(
-                    """
-                    SELECT time, state, breathing_rate, heart_rate, motion_index
-                    FROM baby_vitals
-                    WHERE time >= %s AND time <= %s
-                    ORDER BY time ASC;
-                    """ if is_postgres(conn) else """
-                    SELECT time, state, breathing_rate, heart_rate, motion_index
-                    FROM baby_vitals
-                    WHERE time >= ? AND time <= ?
-                    ORDER BY time ASC;
-                    """,
-                    (window_start, window_end)
-                )
+                query = f"""
+                SELECT time, state, breathing_rate, heart_rate, motion_index, is_real
+                FROM baby_vitals
+                WHERE time >= {"%s" if is_postgres(conn) else "?"} AND time <= {"%s" if is_postgres(conn) else "?"}{real_clause}
+                ORDER BY time ASC;
+                """
+                cur.execute(query, [window_start, window_end] + params_real)
                 rows = cur.fetchall()
                 if rows:
                     return {"timeline": downsample_rows([dict(r) for r in rows], limit)}
 
             # Fallback if window empty
-            cur.execute(
-                """
-                SELECT time, state, breathing_rate, heart_rate, motion_index
-                FROM baby_vitals
-                ORDER BY time DESC
-                LIMIT 1000;
-                """ if is_postgres(conn) else """
-                SELECT time, state, breathing_rate, heart_rate, motion_index
-                FROM baby_vitals
-                ORDER BY time DESC
-                LIMIT 1000;
-                """
-            )
+            fallback_where = f"WHERE 1=1{real_clause}" if real_clause else ""
+            query = f"""
+            SELECT time, state, breathing_rate, heart_rate, motion_index, is_real
+            FROM baby_vitals
+            {fallback_where}
+            ORDER BY time DESC
+            LIMIT 1000;
+            """
+            cur.execute(query, params_real if real_clause else None)
             rows = cur.fetchall()
             return {"timeline": downsample_rows(list(reversed([dict(r) for r in rows])), limit)}
         finally:
@@ -170,51 +168,45 @@ def get_sleep_timeline(
 def get_vitals_trend(
     limit: int = 60,
     bedtime: Optional[str] = "20:00",
-    wake_time: Optional[str] = "07:00"
+    wake_time: Optional[str] = "07:00",
+    is_real: Optional[bool] = None
 ):
     """Returns downsampled vitals for Dev 2 sparkline charts (breathing and pulse rates)."""
     with get_db_connection() as conn:
         cur = conn.cursor()
         try:
+            real_clause = ""
+            params_real = []
+            if is_real is not None:
+                real_clause = " AND is_real = %s" if is_postgres(conn) else " AND is_real = ?"
+                params_real = [is_real]
+
             if bedtime and wake_time:
                 cur.execute("SELECT MAX(time) as max_time FROM baby_vitals WHERE breathing_rate > 0 OR heart_rate > 0;")
                 time_row = cur.fetchone()
                 latest_time = parse_dt_safe(time_row["max_time"]) if time_row and time_row["max_time"] else datetime.datetime.now(datetime.timezone.utc)
                 window_start, window_end = get_night_window(bedtime, wake_time, as_of=latest_time)
 
-                cur.execute(
-                    """
-                    SELECT time, breathing_rate, heart_rate, state
-                    FROM baby_vitals
-                    WHERE time >= %s AND time <= %s AND (breathing_rate > 0 OR heart_rate > 0)
-                    ORDER BY time ASC;
-                    """ if is_postgres(conn) else """
-                    SELECT time, breathing_rate, heart_rate, state
-                    FROM baby_vitals
-                    WHERE time >= ? AND time <= ? AND (breathing_rate > 0 OR heart_rate > 0)
-                    ORDER BY time ASC;
-                    """,
-                    (window_start, window_end)
-                )
+                query = f"""
+                SELECT time, breathing_rate, heart_rate, state, is_real
+                FROM baby_vitals
+                WHERE time >= {"%s" if is_postgres(conn) else "?"} AND time <= {"%s" if is_postgres(conn) else "?"} AND (breathing_rate > 0 OR heart_rate > 0){real_clause}
+                ORDER BY time ASC;
+                """
+                cur.execute(query, [window_start, window_end] + params_real)
                 rows = cur.fetchall()
                 if rows:
                     return {"trend": downsample_rows([dict(r) for r in rows], limit)}
 
-            cur.execute(
-                """
-                SELECT time, breathing_rate, heart_rate, state
-                FROM baby_vitals
-                WHERE breathing_rate > 0 OR heart_rate > 0
-                ORDER BY time DESC
-                LIMIT 1000;
-                """ if is_postgres(conn) else """
-                SELECT time, breathing_rate, heart_rate, state
-                FROM baby_vitals
-                WHERE breathing_rate > 0 OR heart_rate > 0
-                ORDER BY time DESC
-                LIMIT 1000;
-                """
-            )
+            fallback_where = f"WHERE (breathing_rate > 0 OR heart_rate > 0){real_clause}"
+            query = f"""
+            SELECT time, breathing_rate, heart_rate, state, is_real
+            FROM baby_vitals
+            {fallback_where}
+            ORDER BY time DESC
+            LIMIT 1000;
+            """
+            cur.execute(query, params_real if real_clause else None)
             rows = cur.fetchall()
             trend_data = downsample_rows(list(reversed([dict(r) for r in rows])), limit)
             return {"trend": trend_data}
@@ -226,6 +218,7 @@ def record_soothe_event(event: SootheEventCreate):
     """Task 3/4 integration: records auto-soothe intervention events from Dev 3's audio engine."""
     triggered_at = event.triggered_at or datetime.datetime.now(datetime.timezone.utc).isoformat()
     resolved_at = event.resolved_at or datetime.datetime.now(datetime.timezone.utc).isoformat()
+    is_real_val = True if event.is_real is None else bool(event.is_real)
 
     with get_db_connection() as conn:
         cur = conn.cursor()
@@ -233,20 +226,20 @@ def record_soothe_event(event: SootheEventCreate):
             if is_postgres(conn):
                 cur.execute(
                     """
-                    INSERT INTO soothe_events (triggered_at, resolved_at, voice_snippet_used, was_successful)
-                    VALUES (%s, %s, %s, %s)
+                    INSERT INTO soothe_events (triggered_at, resolved_at, voice_snippet_used, was_successful, is_real)
+                    VALUES (%s, %s, %s, %s, %s)
                     RETURNING id;
                     """,
-                    (triggered_at, resolved_at, event.voice_snippet_used, event.was_successful)
+                    (triggered_at, resolved_at, event.voice_snippet_used, event.was_successful, is_real_val)
                 )
                 event_id = cur.fetchone()["id"]
             else:
                 cur.execute(
                     """
-                    INSERT INTO soothe_events (triggered_at, resolved_at, voice_snippet_used, was_successful)
-                    VALUES (?, ?, ?, ?);
+                    INSERT INTO soothe_events (triggered_at, resolved_at, voice_snippet_used, was_successful, is_real)
+                    VALUES (?, ?, ?, ?, ?);
                     """,
-                    (triggered_at, resolved_at, event.voice_snippet_used, event.was_successful)
+                    (triggered_at, resolved_at, event.voice_snippet_used, event.was_successful, is_real_val)
                 )
                 event_id = cur.lastrowid
         finally:
@@ -258,7 +251,8 @@ def record_soothe_event(event: SootheEventCreate):
         "triggered_at": triggered_at,
         "resolved_at": resolved_at,
         "voice_snippet_used": event.voice_snippet_used,
-        "was_successful": event.was_successful
+        "was_successful": event.was_successful,
+        "is_real": is_real_val
     }
 
 class UserSyncRequest(BaseModel):

@@ -10,12 +10,14 @@ CREATE TABLE IF NOT EXISTS baby_vitals (
     breathing_rate DOUBLE PRECISION,
     heart_rate DOUBLE PRECISION,
     confidence DOUBLE PRECISION,
-    motion_index DOUBLE PRECISION DEFAULT 0.0
+    motion_index DOUBLE PRECISION DEFAULT 0.0,
+    is_real BOOLEAN DEFAULT TRUE
 );
 
 -- Fast time-series indexes
 CREATE INDEX IF NOT EXISTS idx_baby_vitals_time ON baby_vitals (time DESC);
 CREATE INDEX IF NOT EXISTS idx_baby_vitals_state ON baby_vitals (state);
+CREATE INDEX IF NOT EXISTS idx_baby_vitals_is_real ON baby_vitals (is_real);
 
 -- 2. Auto-soothe intervention events table
 CREATE TABLE IF NOT EXISTS soothe_events (
@@ -23,7 +25,8 @@ CREATE TABLE IF NOT EXISTS soothe_events (
     triggered_at TIMESTAMPTZ NOT NULL,
     resolved_at TIMESTAMPTZ,
     voice_snippet_used TEXT,
-    was_successful BOOLEAN DEFAULT FALSE
+    was_successful BOOLEAN DEFAULT FALSE,
+    is_real BOOLEAN DEFAULT TRUE
 );
 
 CREATE INDEX IF NOT EXISTS idx_soothe_events_triggered_at ON soothe_events (triggered_at DESC);
@@ -61,6 +64,20 @@ BEGIN
         WHERE table_name = 'users' AND column_name = 'onboarded'
     ) THEN
         ALTER TABLE users ADD COLUMN onboarded BOOLEAN NOT NULL DEFAULT FALSE;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'baby_vitals' AND column_name = 'is_real'
+    ) THEN
+        ALTER TABLE baby_vitals ADD COLUMN is_real BOOLEAN DEFAULT TRUE;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'soothe_events' AND column_name = 'is_real'
+    ) THEN
+        ALTER TABLE soothe_events ADD COLUMN is_real BOOLEAN DEFAULT TRUE;
     END IF;
 END $$;
 

@@ -28,20 +28,28 @@ class TelemetryIngestionWorker:
     def __init__(self, ws_url: str = WS_URL, flush_interval: float = FLUSH_INTERVAL):
         self.ws_url = ws_url
         self.flush_interval = flush_interval
-        self.buffer: List[Tuple[str, str, float, float, float, float]] = []
+        self.buffer: List[Tuple[str, str, float, float, float, float, bool]] = []
         self.running = False
         self._lock = asyncio.Lock()
 
-    def parse_payload(self, raw_data: str) -> Tuple[str, str, float, float, float, float] | None:
-        """Parses and validates telemetry JSON packet against AGENTS.md contract."""
+    def parse_payload(self, raw_data: str) -> Tuple[str, str, float, float, float, float, bool] | None:
+        """Parses and validates telemetry JSON packet against AGENTS.md contract.
+        
+        Automatically determines whether the reading is real or synthetic:
+        - simulated == True: synthetic (mock/simulation source)
+        - camera.live == False: synthetic (synthetic placeholder camera feed)
+        - camera.live == True and not simulated: real (live hardware camera + Presage sensor)
+        """
         try:
             payload = json.loads(raw_data)
             # The camera was switched off: there is nothing to record (would read as signal loss).
             if (payload.get("camera") or {}).get("enabled") is False:
                 return None
-            # Simulated mode (the daemon's mock source): demo numbers, not a measurement.
-            if payload.get("simulated") is True:
-                return None
+
+            is_simulated = bool(payload.get("simulated", False))
+            cam_live = bool((payload.get("camera") or {}).get("live", True))
+            is_real = (not is_simulated) and cam_live
+
             # Contract: timestamp, state, vitals: {brpm, bpm, confidence}, motion_index
             ts = payload.get("timestamp") or datetime.datetime.now(datetime.timezone.utc).isoformat()
             state = payload.get("state", "SIGNAL_UNSTABLE")
@@ -54,7 +62,7 @@ class TelemetryIngestionWorker:
             if brpm <= 0 and bpm <= 0 and state == "SIGNAL_UNSTABLE":
                 return None
 
-            return (ts, state, brpm, bpm, confidence, motion)
+            return (ts, state, brpm, bpm, confidence, motion, is_real)
         except Exception as e:
             logger.warning(f"Failed to parse telemetry packet: {e} (Payload: {raw_data[:100]})")
             return None
@@ -74,16 +82,16 @@ class TelemetryIngestionWorker:
                     if is_postgres():
                         cur.executemany(
                             """
-                            INSERT INTO baby_vitals (time, state, breathing_rate, heart_rate, confidence, motion_index)
-                            VALUES (%s, %s, %s, %s, %s, %s);
+                            INSERT INTO baby_vitals (time, state, breathing_rate, heart_rate, confidence, motion_index, is_real)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s);
                             """,
                             batch
                         )
                     else:
                         cur.executemany(
                             """
-                            INSERT INTO baby_vitals (time, state, breathing_rate, heart_rate, confidence, motion_index)
-                            VALUES (?, ?, ?, ?, ?, ?);
+                            INSERT INTO baby_vitals (time, state, breathing_rate, heart_rate, confidence, motion_index, is_real)
+                            VALUES (?, ?, ?, ?, ?, ?, ?);
                             """,
                             batch
                         )
