@@ -85,6 +85,42 @@ export default function DashboardPage() {
   const activeTrend = trend.length > 1 ? trend : fallbackTrend;
   const activePoint = hoveredTrendIndex !== null ? activeTrend[hoveredTrendIndex] : null;
 
+  // Adaptive bounds & smoothed curves carrying forward valid readings across dropouts
+  const validHrs = activeTrend.map((p) => p.heart_rate).filter((h) => h > 0);
+  const minHrVal = validHrs.length ? Math.min(...validHrs) : 90;
+  const maxHrVal = validHrs.length ? Math.max(...validHrs) : 140;
+  const hrMin = Math.max(40, Math.floor((minHrVal - 6) / 5) * 5);
+  const hrMax = Math.min(180, Math.ceil((maxHrVal + 6) / 5) * 5);
+  const hrRange = Math.max(20, hrMax - hrMin);
+
+  const validBrpms = activeTrend.map((p) => p.breathing_rate).filter((b) => b > 0);
+  const minBrVal = validBrpms.length ? Math.min(...validBrpms) : 18;
+  const maxBrVal = validBrpms.length ? Math.max(...validBrpms) : 36;
+  const brMin = Math.max(8, Math.floor((minBrVal - 2) / 2) * 2);
+  const brMax = Math.min(60, Math.ceil((maxBrVal + 2) / 2) * 2);
+  const brRange = Math.max(10, brMax - brMin);
+
+  const latestValidHr = validHrs.length ? validHrs[validHrs.length - 1] : 109;
+  const latestValidBrpm = validBrpms.length ? validBrpms[validBrpms.length - 1] : 24.3;
+
+  let lastHr = validHrs[0] ?? 109;
+  const smoothHrPoints = activeTrend.map((pt, i) => {
+    if (pt.heart_rate > 0) lastHr = pt.heart_rate;
+    const x = (i / Math.max(1, activeTrend.length - 1)) * 300;
+    const clamped = Math.max(hrMin, Math.min(hrMax, lastHr));
+    const y = 90 - ((clamped - hrMin) / hrRange) * 80;
+    return { x, y };
+  });
+
+  let lastBr = validBrpms[0] ?? 24.3;
+  const smoothBrPoints = activeTrend.map((pt, i) => {
+    if (pt.breathing_rate > 0) lastBr = pt.breathing_rate;
+    const x = (i / Math.max(1, activeTrend.length - 1)) * 300;
+    const clamped = Math.max(brMin, Math.min(brMax, lastBr));
+    const y = 90 - ((clamped - brMin) / brRange) * 80;
+    return { x, y };
+  });
+
   const handleChartHover = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const clientX = "touches" in e ? e.touches[0]?.clientX : e.clientX;
@@ -287,8 +323,10 @@ export default function DashboardPage() {
                 <div className="text-right">
                   <span className="font-display text-2xl text-tone tabular-nums">
                     {activePoint
-                      ? activePoint.breathing_rate.toFixed(1)
-                      : (activeTrend[activeTrend.length - 1]?.breathing_rate.toFixed(1) || "24.3")}
+                      ? activePoint.breathing_rate > 0
+                        ? activePoint.breathing_rate.toFixed(1)
+                        : "—"
+                      : latestValidBrpm.toFixed(1)}
                   </span>
                   <span className="ml-1 text-xs font-medium text-ink-dim">BrPM</span>
                 </div>
@@ -306,25 +344,31 @@ export default function DashboardPage() {
                 {activePoint && hoveredTrendIndex !== null && (
                   <div
                     className={`pointer-events-none absolute -top-1 z-30 transition-transform duration-75 ${
-                      (hoveredTrendIndex / (activeTrend.length - 1)) * 100 < 15
+                      (hoveredTrendIndex / Math.max(1, activeTrend.length - 1)) * 100 < 15
                         ? "translate-x-0"
-                        : (hoveredTrendIndex / (activeTrend.length - 1)) * 100 > 85
+                        : (hoveredTrendIndex / Math.max(1, activeTrend.length - 1)) * 100 > 85
                         ? "-translate-x-full"
                         : "-translate-x-1/2"
                     }`}
-                    style={{ left: `${(hoveredTrendIndex / (activeTrend.length - 1)) * 100}%` }}
+                    style={{ left: `${(hoveredTrendIndex / Math.max(1, activeTrend.length - 1)) * 100}%` }}
                   >
                     <div className="rounded-xl bg-[#0f111f]/95 px-3 py-1.5 shadow-2xl ring-1 ring-white/15 backdrop-blur-md">
                       <div className="flex items-center gap-2">
                         <span className="font-display text-sm font-semibold text-tone">
-                          {activePoint.breathing_rate.toFixed(1)} BrPM
+                          {activePoint.breathing_rate > 0
+                            ? `${activePoint.breathing_rate.toFixed(1)} BrPM`
+                            : "— BrPM"}
                         </span>
                         <span
                           className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
-                            STATE_COLORS[activePoint.state]?.text || "text-tone"
-                          } bg-white/5`}
+                            activePoint.breathing_rate <= 0
+                              ? "text-amber-300 bg-amber-400/10"
+                              : `${STATE_COLORS[activePoint.state]?.text || "text-tone"} bg-white/5`
+                          }`}
                         >
-                          {STATE_COLORS[activePoint.state]?.label || activePoint.state}
+                          {activePoint.breathing_rate <= 0
+                            ? "Signal Unstable"
+                            : STATE_COLORS[activePoint.state]?.label || activePoint.state}
                         </span>
                       </div>
                       <div className="mt-0.5 text-[10px] tabular-nums text-ink-dim">
@@ -336,11 +380,23 @@ export default function DashboardPage() {
 
                 <svg className="h-full w-full overflow-visible" viewBox="0 0 300 100" preserveAspectRatio="none">
                   {/* Target 20-30 baseline zone */}
-                  <rect x="0" y="42" width="300" height="32" fill="currentColor" className="text-tone/10" />
-                  <line x1="0" y1="58" x2="300" y2="58" stroke="currentColor" strokeDasharray="4 4" className="text-tone/20" />
+                  {(() => {
+                    const y30 = 90 - ((30 - brMin) / brRange) * 80;
+                    const y20 = 90 - ((20 - brMin) / brRange) * 80;
+                    const top = Math.max(5, Math.min(95, Math.min(y30, y20)));
+                    const bottom = Math.max(5, Math.min(95, Math.max(y30, y20)));
+                    const h = Math.max(0, bottom - top);
+                    const mid = (top + bottom) / 2;
+                    return (
+                      <>
+                        <rect x="0" y={top} width="300" height={h} fill="currentColor" className="text-tone/10" />
+                        <line x1="0" y1={mid} x2="300" y2={mid} stroke="currentColor" strokeDasharray="4 4" className="text-tone/20" />
+                      </>
+                    );
+                  })()}
 
                   {/* Data polyline */}
-                  {activeTrend.length > 1 && (
+                  {smoothBrPoints.length > 1 && (
                     <polyline
                       fill="none"
                       stroke="currentColor"
@@ -348,42 +404,35 @@ export default function DashboardPage() {
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       className="text-tone"
-                      points={activeTrend
-                        .map((pt, i) => {
-                          const x = (i / (activeTrend.length - 1)) * 300;
-                          const clamped = Math.max(15, Math.min(40, pt.breathing_rate || 24));
-                          const y = 90 - ((clamped - 15) / 25) * 80;
-                          return `${x},${y}`;
-                        })
-                        .join(" ")}
+                      points={smoothBrPoints.map((pt) => `${pt.x.toFixed(1)},${pt.y.toFixed(1)}`).join(" ")}
                     />
                   )}
 
                   {/* Scrubber indicator */}
-                  {activePoint && hoveredTrendIndex !== null && (
-                    <>
-                      {(() => {
-                        const hoverX = (hoveredTrendIndex / (activeTrend.length - 1)) * 300;
-                        const clamped = Math.max(15, Math.min(40, activePoint.breathing_rate || 24));
-                        const hoverY = 90 - ((clamped - 15) / 25) * 80;
-                        return (
-                          <g className="pointer-events-none">
-                            <line
-                              x1={hoverX}
-                              y1={0}
-                              x2={hoverX}
-                              y2={100}
-                              stroke="currentColor"
-                              strokeWidth="1.5"
-                              strokeDasharray="3 3"
-                              className="text-white/40"
-                            />
-                            <circle cx={hoverX} cy={hoverY} r="7" className="fill-tone/30 animate-ping" />
-                            <circle cx={hoverX} cy={hoverY} r="4" className="fill-tone stroke-white stroke-[1.5]" />
-                          </g>
-                        );
-                      })()}
-                    </>
+                  {activePoint && hoveredTrendIndex !== null && smoothBrPoints[hoveredTrendIndex] && (
+                    <g className="pointer-events-none">
+                      <line
+                        x1={smoothBrPoints[hoveredTrendIndex].x}
+                        y1={0}
+                        x2={smoothBrPoints[hoveredTrendIndex].x}
+                        y2={100}
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeDasharray="3 3"
+                        className="text-white/40"
+                      />
+                      {activePoint.breathing_rate > 0 ? (
+                        <>
+                          <circle cx={smoothBrPoints[hoveredTrendIndex].x} cy={smoothBrPoints[hoveredTrendIndex].y} r="7" className="fill-tone/30 animate-ping" />
+                          <circle cx={smoothBrPoints[hoveredTrendIndex].x} cy={smoothBrPoints[hoveredTrendIndex].y} r="4" className="fill-tone stroke-white stroke-[1.5]" />
+                        </>
+                      ) : (
+                        <>
+                          <circle cx={smoothBrPoints[hoveredTrendIndex].x} cy={smoothBrPoints[hoveredTrendIndex].y} r="5" className="fill-amber-400/20 stroke-amber-300 stroke-[1.5]" />
+                          <circle cx={smoothBrPoints[hoveredTrendIndex].x} cy={smoothBrPoints[hoveredTrendIndex].y} r="2.5" className="fill-amber-300" />
+                        </>
+                      )}
+                    </g>
                   )}
                 </svg>
               </div>
@@ -422,8 +471,10 @@ export default function DashboardPage() {
                 <div className="text-right">
                   <span className="font-display text-2xl text-rose-300 tabular-nums">
                     {activePoint
-                      ? Math.round(activePoint.heart_rate)
-                      : Math.round(activeTrend[activeTrend.length - 1]?.heart_rate || 109)}
+                      ? activePoint.heart_rate > 0
+                        ? Math.round(activePoint.heart_rate)
+                        : "—"
+                      : Math.round(latestValidHr)}
                   </span>
                   <span className="ml-1 text-xs font-medium text-ink-dim">BPM</span>
                 </div>
@@ -441,25 +492,31 @@ export default function DashboardPage() {
                 {activePoint && hoveredTrendIndex !== null && (
                   <div
                     className={`pointer-events-none absolute -top-1 z-30 transition-transform duration-75 ${
-                      (hoveredTrendIndex / (activeTrend.length - 1)) * 100 < 15
+                      (hoveredTrendIndex / Math.max(1, activeTrend.length - 1)) * 100 < 15
                         ? "translate-x-0"
-                        : (hoveredTrendIndex / (activeTrend.length - 1)) * 100 > 85
+                        : (hoveredTrendIndex / Math.max(1, activeTrend.length - 1)) * 100 > 85
                         ? "-translate-x-full"
                         : "-translate-x-1/2"
                     }`}
-                    style={{ left: `${(hoveredTrendIndex / (activeTrend.length - 1)) * 100}%` }}
+                    style={{ left: `${(hoveredTrendIndex / Math.max(1, activeTrend.length - 1)) * 100}%` }}
                   >
                     <div className="rounded-xl bg-[#0f111f]/95 px-3 py-1.5 shadow-2xl ring-1 ring-white/15 backdrop-blur-md">
                       <div className="flex items-center gap-2">
                         <span className="font-display text-sm font-semibold text-rose-300">
-                          {Math.round(activePoint.heart_rate)} BPM
+                          {activePoint.heart_rate > 0
+                            ? `${Math.round(activePoint.heart_rate)} BPM`
+                            : "— BPM"}
                         </span>
                         <span
                           className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
-                            STATE_COLORS[activePoint.state]?.text || "text-rose-300"
-                          } bg-white/5`}
+                            activePoint.heart_rate <= 0
+                              ? "text-amber-300 bg-amber-400/10"
+                              : `${STATE_COLORS[activePoint.state]?.text || "text-rose-300"} bg-white/5`
+                          }`}
                         >
-                          {STATE_COLORS[activePoint.state]?.label || activePoint.state}
+                          {activePoint.heart_rate <= 0
+                            ? "Signal Unstable"
+                            : STATE_COLORS[activePoint.state]?.label || activePoint.state}
                         </span>
                       </div>
                       <div className="mt-0.5 text-[10px] tabular-nums text-ink-dim">
@@ -471,11 +528,23 @@ export default function DashboardPage() {
 
                 <svg className="h-full w-full overflow-visible" viewBox="0 0 300 100" preserveAspectRatio="none">
                   {/* Target 100-130 baseline zone */}
-                  <rect x="0" y="36.6" width="300" height="40" fill="currentColor" className="text-rose-400/10" />
-                  <line x1="0" y1="56.6" x2="300" y2="56.6" stroke="currentColor" strokeDasharray="4 4" className="text-rose-400/20" />
+                  {(() => {
+                    const y130 = 90 - ((130 - hrMin) / hrRange) * 80;
+                    const y100 = 90 - ((100 - hrMin) / hrRange) * 80;
+                    const top = Math.max(5, Math.min(95, Math.min(y130, y100)));
+                    const bottom = Math.max(5, Math.min(95, Math.max(y130, y100)));
+                    const h = Math.max(0, bottom - top);
+                    const mid = (top + bottom) / 2;
+                    return (
+                      <>
+                        <rect x="0" y={top} width="300" height={h} fill="currentColor" className="text-rose-400/10" />
+                        <line x1="0" y1={mid} x2="300" y2={mid} stroke="currentColor" strokeDasharray="4 4" className="text-rose-400/20" />
+                      </>
+                    );
+                  })()}
 
                   {/* Data polyline */}
-                  {activeTrend.length > 1 && (
+                  {smoothHrPoints.length > 1 && (
                     <polyline
                       fill="none"
                       stroke="currentColor"
@@ -483,42 +552,35 @@ export default function DashboardPage() {
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       className="text-rose-300"
-                      points={activeTrend
-                        .map((pt, i) => {
-                          const x = (i / (activeTrend.length - 1)) * 300;
-                          const clamped = Math.max(90, Math.min(150, pt.heart_rate || 109));
-                          const y = 90 - ((clamped - 90) / 60) * 80;
-                          return `${x},${y}`;
-                        })
-                        .join(" ")}
+                      points={smoothHrPoints.map((pt) => `${pt.x.toFixed(1)},${pt.y.toFixed(1)}`).join(" ")}
                     />
                   )}
 
                   {/* Scrubber indicator */}
-                  {activePoint && hoveredTrendIndex !== null && (
-                    <>
-                      {(() => {
-                        const hoverX = (hoveredTrendIndex / (activeTrend.length - 1)) * 300;
-                        const clamped = Math.max(90, Math.min(150, activePoint.heart_rate || 109));
-                        const hoverY = 90 - ((clamped - 90) / 60) * 80;
-                        return (
-                          <g className="pointer-events-none">
-                            <line
-                              x1={hoverX}
-                              y1={0}
-                              x2={hoverX}
-                              y2={100}
-                              stroke="currentColor"
-                              strokeWidth="1.5"
-                              strokeDasharray="3 3"
-                              className="text-white/40"
-                            />
-                            <circle cx={hoverX} cy={hoverY} r="7" className="fill-rose-400/30 animate-ping" />
-                            <circle cx={hoverX} cy={hoverY} r="4" className="fill-rose-300 stroke-white stroke-[1.5]" />
-                          </g>
-                        );
-                      })()}
-                    </>
+                  {activePoint && hoveredTrendIndex !== null && smoothHrPoints[hoveredTrendIndex] && (
+                    <g className="pointer-events-none">
+                      <line
+                        x1={smoothHrPoints[hoveredTrendIndex].x}
+                        y1={0}
+                        x2={smoothHrPoints[hoveredTrendIndex].x}
+                        y2={100}
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeDasharray="3 3"
+                        className="text-white/40"
+                      />
+                      {activePoint.heart_rate > 0 ? (
+                        <>
+                          <circle cx={smoothHrPoints[hoveredTrendIndex].x} cy={smoothHrPoints[hoveredTrendIndex].y} r="7" className="fill-rose-400/30 animate-ping" />
+                          <circle cx={smoothHrPoints[hoveredTrendIndex].x} cy={smoothHrPoints[hoveredTrendIndex].y} r="4" className="fill-rose-300 stroke-white stroke-[1.5]" />
+                        </>
+                      ) : (
+                        <>
+                          <circle cx={smoothHrPoints[hoveredTrendIndex].x} cy={smoothHrPoints[hoveredTrendIndex].y} r="5" className="fill-amber-400/20 stroke-amber-300 stroke-[1.5]" />
+                          <circle cx={smoothHrPoints[hoveredTrendIndex].x} cy={smoothHrPoints[hoveredTrendIndex].y} r="2.5" className="fill-amber-300" />
+                        </>
+                      )}
+                    </g>
                   )}
                 </svg>
               </div>

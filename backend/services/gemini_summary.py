@@ -108,6 +108,9 @@ def fetch_nightly_metrics(
             else:
                 window_start, window_end = get_night_window(bedtime, wake_time, as_of=latest_time)
 
+            ws_param = window_start if is_postgres() else window_start.isoformat()
+            we_param = window_end if is_postgres() else window_end.isoformat()
+
             # 1. Fetch vitals summary scoped to the bedtime window
             cur.execute(
                 f"""
@@ -127,13 +130,14 @@ def fetch_nightly_metrics(
                 FROM baby_vitals
                 WHERE time >= {"%s" if is_postgres() else "?"} AND time <= {"%s" if is_postgres() else "?"}{real_clause};
                 """,
-                [window_start, window_end] + params_real
+                [ws_param, we_param] + params_real
             )
             vitals_row = cur.fetchone()
 
             # Fallback if specific window had no samples (e.g. dev testing at noon with older seed data)
             if not vitals_row or not vitals_row["total_samples"] or not vitals_row["avg_brpm"]:
                 fallback_start = latest_time - datetime.timedelta(hours=11)
+                fallback_param = fallback_start if is_postgres() else fallback_start.isoformat()
                 cur.execute(
                     f"""
                     SELECT 
@@ -152,7 +156,7 @@ def fetch_nightly_metrics(
                     FROM baby_vitals
                     WHERE time >= {"%s" if is_postgres() else "?"}{real_clause};
                     """,
-                    [fallback_start] + params_real
+                    [fallback_param] + params_real
                 )
                 vitals_row = cur.fetchone()
                 window_start = fallback_start
@@ -166,7 +170,7 @@ def fetch_nightly_metrics(
                 WHERE triggered_at >= {"%s" if is_postgres() else "?"} AND triggered_at <= {"%s" if is_postgres() else "?"}{real_clause}
                 ORDER BY triggered_at ASC;
                 """,
-                [window_start, window_end] + params_real
+                [ws_param, we_param] + params_real
             )
             soothe_rows = cur.fetchall()
         finally:
