@@ -145,13 +145,16 @@ def get_sleep_timeline(
                 latest_time = parse_dt_safe(time_row["max_time"]) if time_row and time_row["max_time"] else datetime.datetime.now(datetime.timezone.utc)
                 window_start, window_end = get_night_window(bedtime, wake_time, as_of=latest_time)
 
+                ws_val = window_start if is_postgres(conn) else window_start.isoformat()
+                we_val = window_end if is_postgres(conn) else window_end.isoformat()
+
                 query = f"""
                 SELECT time, state, breathing_rate, heart_rate, motion_index, is_real
                 FROM baby_vitals
                 WHERE time >= {"%s" if is_postgres(conn) else "?"} AND time <= {"%s" if is_postgres(conn) else "?"}{real_clause}
                 ORDER BY time ASC;
                 """
-                cur.execute(query, [window_start, window_end] + params_real)
+                cur.execute(query, [ws_val, we_val] + params_real)
                 rows = cur.fetchall()
                 if rows:
                     return {"timeline": downsample_rows([dict(r) for r in rows], limit)}
@@ -189,23 +192,26 @@ def get_vitals_trend(
                 params_real = [is_real]
 
             if bedtime and wake_time:
-                cur.execute("SELECT MAX(time) as max_time FROM baby_vitals WHERE breathing_rate > 0 OR heart_rate > 0;")
+                cur.execute("SELECT MAX(time) as max_time FROM baby_vitals WHERE breathing_rate > 0 AND heart_rate > 0;")
                 time_row = cur.fetchone()
                 latest_time = parse_dt_safe(time_row["max_time"]) if time_row and time_row["max_time"] else datetime.datetime.now(datetime.timezone.utc)
                 window_start, window_end = get_night_window(bedtime, wake_time, as_of=latest_time)
 
+                ws_val = window_start if is_postgres(conn) else window_start.isoformat()
+                we_val = window_end if is_postgres(conn) else window_end.isoformat()
+
                 query = f"""
                 SELECT time, breathing_rate, heart_rate, state, is_real
                 FROM baby_vitals
-                WHERE time >= {"%s" if is_postgres(conn) else "?"} AND time <= {"%s" if is_postgres(conn) else "?"} AND (breathing_rate > 0 OR heart_rate > 0){real_clause}
+                WHERE time >= {"%s" if is_postgres(conn) else "?"} AND time <= {"%s" if is_postgres(conn) else "?"} AND (breathing_rate > 0 AND heart_rate > 0){real_clause}
                 ORDER BY time ASC;
                 """
-                cur.execute(query, [window_start, window_end] + params_real)
+                cur.execute(query, [ws_val, we_val] + params_real)
                 rows = cur.fetchall()
                 if rows:
                     return {"trend": downsample_rows([dict(r) for r in rows], limit)}
 
-            fallback_where = f"WHERE (breathing_rate > 0 OR heart_rate > 0){real_clause}"
+            fallback_where = f"WHERE (breathing_rate > 0 AND heart_rate > 0){real_clause}"
             query = f"""
             SELECT time, breathing_rate, heart_rate, state, is_real
             FROM baby_vitals
