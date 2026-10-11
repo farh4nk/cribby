@@ -32,7 +32,7 @@ export function MorningRecapCard() {
       const json = await res.json();
       setData(json);
     } catch {
-setError("Tiger Data / Gemini service currently offline");
+setError("Last night’s recap isn’t available right now. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -50,7 +50,7 @@ setError("Tiger Data / Gemini service currently offline");
         const json = await res.json();
         if (!cancelled) setData(json);
       } catch {
-        if (!cancelled) setError("Tiger Data / Gemini service currently offline");
+        if (!cancelled) setError("Last night’s recap isn’t available right now. Please try again.");
       } finally {
         if (!cancelled) setLoading(false);
       }

@@ -106,7 +106,7 @@ function EditBabyProfileDialog({
                 Baby Profile & Schedule
               </h2>
               <p className="text-xs text-ink-dim">
-                Saved to Tiger Data Timescale Cloud
+                Saved to your account
               </p>
             </div>
           </div>
@@ -211,7 +211,7 @@ function EditBabyProfileDialog({
 
           {/* Scope Note */}
           <p className="text-xs leading-relaxed text-ink-faint">
-            Changing the schedule re-scopes telemetry queries, vitals trends, and Gemini morning briefs to this exact window.
+            Changing the schedule changes the window used for the dashboard, vitals trends, and the morning recap.
           </p>
 
           {/* Action Buttons */}

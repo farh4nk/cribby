@@ -20,7 +20,7 @@ export function UserMenu() {
         type="button"
         onClick={login}
         className="flex items-center gap-2 rounded-full bg-white/10 px-3.5 py-1.5 text-xs font-medium text-ink ring-1 ring-white/15 transition hover:bg-white/15 hover:ring-white/25 cursor-pointer"
-        title="Sign in with your Google account to sync parent profile and baby vitals with Tiger Data"
+        title="Sign in with your Google account to save your baby’s profile and sleep history"
       >
         <svg className="h-3.5 w-3.5" viewBox="0 0 24 24">
           <path
@@ -90,7 +90,7 @@ export function UserMenu() {
             {/* Child Profile Section */}
             <div className="my-3 rounded-xl bg-white/5 p-3 ring-1 ring-white/5">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-tone">Baby Profile (Tiger Data)</span>
+                <span className="text-xs font-medium text-tone">Baby profile</span>
                 <button
                   type="button"
                   onClick={() => {
@@ -120,7 +120,7 @@ export function UserMenu() {
             {/* Sync Badge */}
             <div className="flex items-center gap-2 px-1 text-[11px] text-emerald-400">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-              <span>Synced with Tiger Data Cloud</span>
+              <span>Profile saved</span>
             </div>
 
             {/* Logout button */}

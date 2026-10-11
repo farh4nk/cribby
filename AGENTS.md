@@ -39,7 +39,7 @@ Auto-soothe is the demo centerpiece because it combines Presage and the audio pi
 
 ## Nice-to-haves
 
-- Two-way audio for a parent to speak live through the monitor
+- Push-to-talk: a parent speaks live through the monitor (one-way; it plays on the dashboard machine's speakers)
 - Cry detection to reduce false alarms
 - Night vision or low-light enhancement
 - Multi-caregiver view-only sharing
@@ -129,7 +129,7 @@ The task checkboxes below are the original plan and are not maintained. Current 
 
 - **Pi:** camera only (`CRADLEECHO_SOURCE=mock`, `CRADLEECHO_STREAM_FPS=30`), connected to the Mac by an Ethernet cable. Pi eth0 must use `ipv4.method disabled, ipv6.method link-local`, or NetworkManager drops the link every minute while it waits for DHCP.
 - **Mac (home hub):** `deploy/mac/start_hub.sh` starts PulseAudio, the cable camera relay, the `mac-presage` container (Presage with frame pacing and eyes), the analytics API and ingestion worker, and `tailscale serve`. Then `cd web && npm run dev`.
-- **One URL for everyone:** `https://<mac>.<tailnet>.ts.net` (the Mac shared on Tailscale). Real vitals, eyes, recap, relaxing music and two-way "talk" (teammate's mic plays on the Mac speakers: verified). `localhost:3000` on the Mac is the backup; the Pi's own URL shows simulated vitals only.
+- **One URL for everyone:** `https://<mac>.<tailnet>.ts.net` (the Mac shared on Tailscale). Real vitals, eyes, recap, relaxing music and push-to-talk (teammate's mic plays on the Mac speakers: verified). `localhost:3000` on the Mac is the backup; the Pi's own URL shows simulated vitals only.
 - `web/.env` must not set `NEXT_PUBLIC_DAEMON_URL` / `ANALYTICS_URL` / `EDGE_URL`.
 
 ### Realistic scope for the deadline (Sunday 12 PM)

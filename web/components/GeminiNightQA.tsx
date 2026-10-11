@@ -50,7 +50,7 @@ export function GeminiNightQA({ bedtime = "20:00", wakeTime = "07:00", className
       setAnswer(data.answer);
       setModelUsed(data.model_used);
     } catch {
-      setError("Gemini assistant unavailable. Check analytics service.");
+      setError("The assistant isn’t available right now. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -76,7 +76,7 @@ export function GeminiNightQA({ bedtime = "20:00", wakeTime = "07:00", className
       </div>
 
       <p className="mt-2 text-sm text-ink-dim">
-        Ask anything about {babyObject(name)}’s vital signs, restlessness episodes, or sleep depth. Gemini analyzes the full night’s Timescale telemetry to answer.
+        Ask anything about {babyObject(name)}’s vital signs, restlessness episodes, or sleep depth. Gemini looks at the whole night to answer.
       </p>
 
       {/* Suggested question chips */}
@@ -125,7 +125,7 @@ export function GeminiNightQA({ bedtime = "20:00", wakeTime = "07:00", className
       {loading && (
         <div role="status" className="mt-6 flex items-center gap-3 text-sm text-ink-dim">
           <span className="h-4 w-4 animate-spin rounded-full border-2 border-tone border-t-transparent" />
-          Analyzing Tiger Data vitals with Gemini…
+          Analyzing the night with Gemini…
         </div>
       )}
 

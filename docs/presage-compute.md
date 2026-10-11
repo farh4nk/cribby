@@ -54,7 +54,7 @@ Result over ~2 minutes with a person in frame: 30.0 frames/s to the bridge in ev
 `kFrameRateTooLow` (it fired constantly before), confidence 1.00, breathing 17-22/min, heart rate
 58-97 bpm. About 3-15 of the 30 frames/s are repeats; Presage still reported full confidence.
 
-## Teammate talks, Mac speakers play it (two-way audio "talk" on the Mac route)
+## Teammate talks, Mac speakers play it (one-way push-to-talk on the Mac route)
 Docker on a Mac has no sound card, so the Mac daemon plays talk audio through PulseAudio on the Mac:
 1. `brew install pulseaudio`, then start it with network audio limited to this Mac and Docker:
    ```

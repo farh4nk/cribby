@@ -95,7 +95,7 @@ export function TwoWayAudio({ sootheEngine }: { sootheEngine: SootheEngine | nul
       return;
     }
     if (!secureContext) {
-      setTalkError("Microphone needs HTTPS or localhost");
+      setTalkError("Microphone isn’t available on this connection");
       setTalkState("error");
       return;
     }
@@ -346,14 +346,14 @@ export function TwoWayAudio({ sootheEngine }: { sootheEngine: SootheEngine | nul
           </div>
           <div>
             <h2 className="font-display text-base tracking-tight text-ink [font-variation-settings:'SOFT'_100]">
-              Two-Way Audio
+              Push-to-Talk
             </h2>
             <p className="text-xs text-ink-faint">
               {talkState === "talking"
                 ? "Speaking to baby"
                 : listenState === "listening"
                   ? `Listening (${Math.round(listenLevel * 100)}%)`
-                  : "Push-to-talk & nursery monitor"}
+                  : "Speak through the monitor"}
             </p>
           </div>
         </div>
@@ -382,9 +382,9 @@ export function TwoWayAudio({ sootheEngine }: { sootheEngine: SootheEngine | nul
             <div className="flex flex-col gap-3">
               {!secureContext ? (
                 <div className="rounded-xl bg-amber-500/10 px-4 py-3 text-sm text-amber-300 ring-1 ring-amber-500/30">
-                  <div>Microphone needs HTTPS or localhost</div>
+                  <div>Microphone isn’t available on this connection</div>
                   <p className="mt-1 text-xs text-amber-300/80">
-                    Open this page at the monitor’s Tailscale HTTPS address (https://&lt;machine&gt;.&lt;tailnet&gt;.ts.net) to talk.
+                    Open the monitor’s secure (https) link to use the microphone.
                   </p>
                 </div>
               ) : (

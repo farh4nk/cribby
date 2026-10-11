@@ -133,7 +133,7 @@ export function ActivityLog() {
 
           {!alerts.supported && (
             <p className="mt-4 text-xs leading-relaxed text-ink-faint">
-              Desktop alerts need a secure connection (https, or localhost).
+              Desktop alerts aren’t available in this browser or on this connection.
             </p>
           )}
         </div>

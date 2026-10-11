@@ -66,7 +66,7 @@ The defaults in `compose.yaml` come from real measurements; override any of them
 **A Pi 4 is at its limit for Presage.** Measured with `CRADLEECHO_DIAG=1`: the bridge's mediapipe threads use ~2.5 of 4 cores and only 20-25 fps reach it (below the 25 it needs), even at 320x240, with the `performance` CPU governor and no browser open. The camera itself delivers a steady 30 fps and the face gate costs ~6 ms/frame. With Presage on a Mac reading the Pi's stream, 29 fps reached the bridge with no `kFrameRateTooLow`. See [presage-compute.md](presage-compute.md) for the table and the Pi-as-camera setup (`CRADLEECHO_SOURCE=mock CRADLEECHO_STREAM_FPS=30`).
 
 ## HTTPS for the microphone: Tailscale (recommended)
-Browsers only allow the mic (two-way audio "talk") on HTTPS or `localhost`. `tailscale serve` gives the Pi a real
+Browsers only allow the mic (push-to-talk) on HTTPS or `localhost`. `tailscale serve` gives the Pi a real
 Let's Encrypt certificate for its `*.ts.net` name, so devices need no CA install and no `/pair` step. Only devices
 on your tailnet can reach it.
 

@@ -154,7 +154,7 @@ export default function DashboardPage() {
       });
     } catch {
       if (!cached) {
-        setError("Unable to connect to Tiger Data analytics API");
+        setError("Unable to load the night’s data. Please try again.");
       }
     } finally {
       setLoading(false);
@@ -192,7 +192,7 @@ export default function DashboardPage() {
           </h1>
           <p className="mt-2 text-sm text-ink-dim flex flex-wrap items-center gap-x-2 gap-y-1">
             <span>
-              Scheduled night: <span className="font-medium text-ink">{formatTime12(bedtime)} – {formatTime12(wakeTime)}</span> · Scoped to Tiger Data Timescale vitals & Gemini sleep intelligence
+              Scheduled night: <span className="font-medium text-ink">{formatTime12(bedtime)} – {formatTime12(wakeTime)}</span> · Vitals and summaries for this window
             </span>
             {lastUpdated && (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-white/5 px-2.5 py-0.5 text-xs text-tone/90 ring-1 ring-white/10">
@@ -208,7 +208,7 @@ export default function DashboardPage() {
             onClick={() => loadDashboardData(bedtime, wakeTime, true)}
             disabled={loading || isRevalidating}
             className="flex items-center gap-1.5 rounded-full bg-white/5 px-3 py-2 text-xs font-medium text-ink ring-1 ring-white/10 transition hover:bg-white/10 hover:text-tone cursor-pointer disabled:opacity-50"
-            title="Sync fresh telemetry from Tiger Data"
+            title="Refresh the night’s data"
           >
             <svg
               className={`h-3.5 w-3.5 text-tone ${isRevalidating ? "animate-spin" : ""}`}
@@ -241,7 +241,7 @@ export default function DashboardPage() {
       {loading && (
         <div role="status" className="mt-12 flex items-center gap-3 text-sm text-ink-dim">
           <span className="h-4 w-4 animate-spin rounded-full border-2 border-tone border-t-transparent" aria-hidden />
-          Aggregating telemetry from Tiger Data for {formatTime12(bedtime)} – {formatTime12(wakeTime)}…
+          Loading the night from {formatTime12(bedtime)} – {formatTime12(wakeTime)}…
         </div>
       )}
 
@@ -539,7 +539,7 @@ export default function DashboardPage() {
               <h2 className="font-display text-2xl text-ink [font-variation-settings:'SOFT'_100]">
                 Sleep State Timeline
               </h2>
-              <span className="text-xs text-ink-faint">Tiger Data Hypertable · Scoped to Scheduled Night</span>
+              <span className="text-xs text-ink-faint">Your scheduled night</span>
             </div>
 
             {/* Timeline Segment Bar */}

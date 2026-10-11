@@ -97,7 +97,7 @@ export function CameraWindow() {
       {/* Vitals Mode Toggle Switch */}
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-white/5 p-2 px-3.5 ring-1 ring-white/10 text-xs">
         <div className="flex items-center gap-2">
-          <span className="font-semibold text-ink-dim">Telemetry Sensor:</span>
+          <span className="font-semibold text-ink-dim">Vitals:</span>
           <span
             className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-medium ${
               sourceMode === "REALTIME"
@@ -110,7 +110,7 @@ export function CameraWindow() {
                 sourceMode === "REALTIME" ? "bg-emerald-400" : "bg-tone"
               } animate-pulse`}
             />
-            {sourceMode === "REALTIME" ? "Live Optical Sensor" : "Simulated Demo"}
+            {sourceMode === "REALTIME" ? "Live camera" : "Demo data"}
           </span>
         </div>
 
@@ -124,7 +124,7 @@ export function CameraWindow() {
                 : "text-ink-dim hover:text-ink"
             }`}
           >
-            ⚡ Simulated
+            Demo
           </button>
           <button
             type="button"
@@ -198,15 +198,15 @@ export function CameraWindow() {
 
               <div className="flex items-center gap-2 rounded-full bg-tone/15 px-3 py-1 text-xs font-medium text-tone ring-1 ring-tone/30">
                 <span className="h-1.5 w-1.5 rounded-full bg-tone animate-ping" />
-                Synthetic Vitals Active · Camera Off
+                Demo vitals · Camera off
               </div>
 
               <div className="flex flex-col items-center gap-1">
                 <span className="font-display text-2xl text-ink [font-variation-settings:'SOFT'_100]">
-                  Simulated Nursery Monitor
+                  Demo Nursery Monitor
                 </span>
                 <span className="max-w-md text-xs text-ink-dim">
-                  Camera feed is off · Continuous pediatric vitals and sleep cycle simulation stream
+                  Camera is off. Showing sample vitals.
                 </span>
               </div>
 
@@ -245,7 +245,7 @@ export function CameraWindow() {
               </svg>
               <span className="font-display text-2xl text-ink [font-variation-settings:'SOFT'_100]">Camera is off</span>
               <span className="max-w-sm text-sm text-ink-dim">
-                Monitoring is paused. Presage isn’t running, so no credits are being used.
+                Monitoring is paused while the camera is off.
               </span>
               <button
                 type="button"
@@ -309,8 +309,8 @@ export function CameraWindow() {
           <span className="flex flex-wrap items-center">
             {cameraOff
               ? sourceMode === "SIMULATED"
-                ? "Camera off · Synthetic vitals active"
-                : "Presage paused · no credits in use"
+                ? "Camera off · Demo vitals"
+                : "Monitoring paused"
               : camera
                 ? statusParts(camera, stale ? undefined : latest?.eyes).map((part, i) => (
                     <span key={part} className="flex items-center">

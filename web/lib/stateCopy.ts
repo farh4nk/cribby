@@ -63,7 +63,7 @@ export function copyFor(tone: Tone, camera?: CameraStatus, name = ""): StateCopy
     case "paused":
       return {
         headline: "Monitoring is paused.",
-        detail: "The camera is off. Turn it on to resume. No Presage credits are being used.",
+        detail: "The camera is off. Turn it on to resume.",
         pill: "Camera off",
       };
     case "offline":
