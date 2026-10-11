@@ -67,6 +67,17 @@ const fallbackTrend: TrendEntry[] = [
   { time: "2026-10-10T07:00:00Z", breathing_rate: 27.4, heart_rate: 122, state: "AWAKE" },
 ];
 
+/** Carries the last valid (> 0) reading across sensor dropouts so the chart line has no 0-spikes. */
+function forwardFill(values: number[], initial: number): number[] {
+  const filled: number[] = [];
+  let last = initial;
+  for (const v of values) {
+    if (v > 0) last = v;
+    filled.push(last);
+  }
+  return filled;
+}
+
 export default function DashboardPage() {
   const title = babyTitle(useBabyName() ?? "");
   const { baby } = useAuth();
@@ -103,20 +114,18 @@ export default function DashboardPage() {
   const latestValidHr = validHrs.length ? validHrs[validHrs.length - 1] : 109;
   const latestValidBrpm = validBrpms.length ? validBrpms[validBrpms.length - 1] : 24.3;
 
-  let lastHr = validHrs[0] ?? 109;
-  const smoothHrPoints = activeTrend.map((pt, i) => {
-    if (pt.heart_rate > 0) lastHr = pt.heart_rate;
+  const filledHr = forwardFill(activeTrend.map((p) => p.heart_rate), validHrs[0] ?? 109);
+  const smoothHrPoints = filledHr.map((value, i) => {
     const x = (i / Math.max(1, activeTrend.length - 1)) * 300;
-    const clamped = Math.max(hrMin, Math.min(hrMax, lastHr));
+    const clamped = Math.max(hrMin, Math.min(hrMax, value));
     const y = 90 - ((clamped - hrMin) / hrRange) * 80;
     return { x, y };
   });
 
-  let lastBr = validBrpms[0] ?? 24.3;
-  const smoothBrPoints = activeTrend.map((pt, i) => {
-    if (pt.breathing_rate > 0) lastBr = pt.breathing_rate;
+  const filledBr = forwardFill(activeTrend.map((p) => p.breathing_rate), validBrpms[0] ?? 24.3);
+  const smoothBrPoints = filledBr.map((value, i) => {
     const x = (i / Math.max(1, activeTrend.length - 1)) * 300;
-    const clamped = Math.max(brMin, Math.min(brMax, lastBr));
+    const clamped = Math.max(brMin, Math.min(brMax, value));
     const y = 90 - ((clamped - brMin) / brRange) * 80;
     return { x, y };
   });
